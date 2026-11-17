@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "dataset": "synthetic",
+  "entrypoint": "streamlit_app.py",
+  "files": {
+    ".gitignore": "6dd21ff43c6173e7bed7a932891b56865c1f920d95ed19cd525b759af5171337",
+    ".streamlit/config.toml": "e842d67e20eade202690f3d48f1242d64d7694959f74fdb4aa46b2ea96c53723",
+    "analytics.json": "28732a511af8192e3818c684e4a6e0ee96d557f7d55843f6a6d074997647b215",
+    "analytics_calendar.py": "254b9adab06692ecc372cccd9107a44508320355742b099c1c8730000edf898f",
+    "face-code.svg": "86a57ffad1b610e674720b324b2e446605c82f4273e5e0e803846b13205af4dc",
+    "fc_format.py": "450bac55476a40222e384009c8a0fd945d6fdfca58ada4b49f98554fc960dc33",
+    "management.py": "170a52d36e851b34c54ef65ed5896631f7a258e670c74b772ca254e5076f457f",
+    "model.py": "74ba9713f0b5160e34cb5532941e7984ffd6b5248f6f220ac40b95d8317767f8",
+    "promotion_excel.py": "c9a5851772d135bed964fc8ae1c2914246525138fe4f2771bb8ca2ab090809dd",
+    "promotion_overview.py": "7a66ef66ecf9b7267090df05c686ce3491bcf62f9c8244a1cc8a61359fb22666",
+    "promotion_table.py": "300a1385ee3cfdf7e8002201379124f3845744ad254bbf98b4f28f0be06f2863",
+    "promotion_view.py": "5368bd7a701c62663b19a4e4f9a5b1ae19d1cbb029d9ad6597bccc2237a82b78",
+    "requirements.txt": "22eb163b996e83eb9a76205a91d39c067171d506e3a63c034077b464313b8383",
+    "runtime_model.py": "9e8d61e2b3a294dd94b3b35d32d0ddccfcf7e6e3d0a8acdcd31c9739dec4af77",
+    "streamlit_app.py": "5f26c7b555a08c409237d3dfa3c4d53dcfa4a959588e037bc4f960738e95ebcc",
+    "wb_format.py": "48aefe740f3d7ca4b9aa2fa03512c9d78051e7cdf662d3f1e875aac00967632f",
+    "wb_style.py": "a401aaadfeb942b05ef1cc2ade5d57f116e9e125fd20a88d791e48f4d9eeab2c",
+    "week_adapter.py": "6dec730517033b40fc20c955f17d060d104b4d3cec77bbd7d035218155d810c7",
+    "week_attention.py": "c357ae6c7eb7a092e2f846027fe095b99b55d4500022173e9c41a7fd67872323",
+    "week_controls.py": "b7d78de4f935005725947078aed5d2b71654dde56deab4172476feeec7cda5e4",
+    "week_detail.py": "44f0906ccaea2b5382cb64497d69eb2dcc08e73c35234080a9e5dbbcc9805153"
+  }
+}

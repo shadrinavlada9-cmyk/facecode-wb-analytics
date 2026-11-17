@@ -1,0 +1,22 @@
+[theme]
+base = "light"
+primaryColor = "#171717"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F5F5"
+textColor = "#1B1B1B"
+borderColor = "#DDDDDD"
+dataframeBorderColor = "#DDDDDD"
+dataframeHeaderBackgroundColor = "#F4F4F4"
+
+[theme.sidebar]
+backgroundColor = "#F5F5F5"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1B1B1B"
+primaryColor = "#171717"
+borderColor = "#DDDDDD"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "viewer"
