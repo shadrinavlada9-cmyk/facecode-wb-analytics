@@ -5,6 +5,7 @@ from time import sleep
 
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
+from login_limit import attempt
 
 _GRANT = "_facecode_session_grant"
 _INPUT = "_facecode_password_input"
@@ -27,12 +28,13 @@ def _valid_grant(password):
 def _submit():
     submitted = st.session_state.pop(_INPUT, "")
     password = _password()
-    if password is not None and compare_digest(submitted.encode("utf-8"), password):
+    result = attempt(lambda: password is not None and compare_digest(submitted.encode("utf-8"), password))
+    if result == "accepted":
         st.session_state[_GRANT] = sha256(password).digest()
         st.session_state.pop(_FAILED, None)
     else:
         st.session_state.pop(_GRANT, None)
-        st.session_state[_FAILED] = True
+        st.session_state[_FAILED] = result
         sleep(0.75)
 
 
@@ -48,7 +50,9 @@ def require_access():
     with st.form("facecode_login", clear_on_submit=True):
         st.text_input("Пароль", type="password", key=_INPUT)
         st.form_submit_button("Войти", on_click=_submit)
-    if st.session_state.get(_FAILED):
+    if st.session_state.get(_FAILED) == "limited":
+        st.error("Слишком много попыток. Повторите через минуту.")
+    elif st.session_state.get(_FAILED):
         st.error("Неверный пароль.")
     st.stop()
 

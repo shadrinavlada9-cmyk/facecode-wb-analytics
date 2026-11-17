@@ -4,6 +4,7 @@ from fc_format import DEMO_LABEL, rate
 import re,json,tempfile
 from pathlib import Path
 import pandas as pd
+import streamlit as st
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Font,PatternFill
@@ -14,7 +15,12 @@ def excel(sheets,metadata=None):
  for name,frame in sheets:
   title=re.sub(r'[\\/*?:\[\]]',' ',str(name)).strip()[:31] or 'Данные';original=title;n=1
   while title in used:n+=1;tail=' '+str(n);title=original[:31-len(tail)]+tail
-  used.add(title);ws=wb.create_sheet(title);ws.freeze_panes='A3';ws.append([DEMO_LABEL]);header=[]
+  used.add(title);ws=wb.create_sheet(title);header=[]
+  first_row = 1
+  if st.session_state.get("_facecode_demo_payload", True):
+   ws.append([DEMO_LABEL])
+   first_row = 2
+  ws.freeze_panes=f'A{first_row+1}'
   for i,label in enumerate(frame.columns,1):
    cell=WriteOnlyCell(ws,str(label));cell.data_type='s';cell.font=Font(bold=True,color='FFFFFF');cell.fill=PatternFill('solid',fgColor='263950');header.append(cell);ws.column_dimensions[get_column_letter(i)].width=min(55,max(16,len(str(label))+3))
   if header:ws.append(header)
@@ -30,6 +36,6 @@ def excel(sheets,metadata=None):
     elif isinstance(v,(int,float)) and not isinstance(v,bool):cell.number_format='0.00' if rate(str(label)) or rate(metric) or str(label).startswith('H7 ') else '#,##0'
     cells.append(cell)
    ws.append(cells)
-  if len(frame.columns):ws.auto_filter.ref=f'A2:{get_column_letter(len(frame.columns))}{len(frame)+2}'
+  if len(frame.columns):ws.auto_filter.ref=f'A{first_row}:{get_column_letter(len(frame.columns))}{len(frame)+first_row}'
  output=BytesIO();wb.save(output);return output.getvalue()
 

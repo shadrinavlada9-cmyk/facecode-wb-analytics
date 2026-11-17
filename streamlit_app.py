@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-import json
 from base64 import b64encode
 from pathlib import Path
 
@@ -18,9 +17,11 @@ require_access()
 import pandas as pd
 
 from analytics_calendar import START, dates
+from cloud_data import load_dataset
 from fc_format import DEMO_LABEL
 from model import ADS, FINANCE, FUNNEL, STOCK
 from runtime_model import PublishedAnalytics
+from protected_store import Denied, Invalid, Unavailable
 import week_adapter
 import week_detail
 
@@ -38,20 +39,21 @@ LABELS.update(stock_total="FBW + FBS, шт.", stock_value="Оценка запа
 DIMENSIONS = ("Коллекция", "Гендер", "Тип товара")
 
 
-path = Path(__file__).with_name("analytics.json")
-try:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    st.error("Данные демоверсии недоступны.")
-    st.stop()
-if not isinstance(payload, dict) or payload.get("synthetic") is not True:
-    st.error("Данные демоверсии недоступны.")
-    st.stop()
-model = PublishedAnalytics(payload)
 logout_button()
+try:
+    payload, backup = load_dataset()
+    model = PublishedAnalytics(payload)
+except (Denied, Invalid, Unavailable, ValueError, KeyError, TypeError):
+    st.error("Аналитика временно недоступна. Обратитесь к владельцу приложения.")
+    st.stop()
+demo = payload.get("synthetic") is True
+st.session_state["_facecode_demo_payload"] = demo
 section = st.radio("Раздел", ("Неделя", "Неделя — детализация", "Продвижение"), horizontal=True)
 st.caption("Последнее принятое обновление · " + payload["released_at_utc"])
-st.warning(DEMO_LABEL)
+if demo:
+    st.warning(DEMO_LABEL)
+if backup:
+    st.warning("Показано последнее проверенное поколение.")
 latest = max((r["period_end"] for r in model.records if r["kind"] == "funnel"), default=START)
 periods = [(START, START)]
 cursor = date.fromisoformat(START) + timedelta(days=1)
