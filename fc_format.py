@@ -32,4 +32,3 @@ def format_value(value,label=""):
     return str(value)
 
 
-DEMO_LABEL = 'Демо — тестовые данные'

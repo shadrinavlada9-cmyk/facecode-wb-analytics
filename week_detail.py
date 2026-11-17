@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 from session_download import excel_download
 import wb_format as presentation
-from fc_format import DEMO_LABEL
 UNKNOWN = 'Не определено'
 
 D = Decimal
@@ -357,7 +356,7 @@ def _excel(tables, title, coverage):
     book.remove(book.active)
     for name, rows in tables:
         sheet = book.create_sheet(name)
-        sheet.append([f"{DEMO_LABEL} · {title}" if st.session_state.get("_facecode_demo_payload", True) else title])
+        sheet.append([title])
         sheet.append([coverage])
         columns = list(dict.fromkeys(key for row in rows for key in row))
         if not columns:

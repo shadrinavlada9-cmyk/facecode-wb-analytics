@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from access import logout_button, require_access
+from cloud_data import load_dataset, source_status
 from wb_style import GLOBAL_CSS
 
 st.set_page_config(page_title="FACE CODE Analytics", layout="wide", initial_sidebar_state="collapsed")
@@ -12,13 +13,12 @@ st.html(GLOBAL_CSS.replace("padding-top:1.05rem","padding-top:4.5rem"))
 logo = Path(__file__).with_name("face-code.svg").read_text(encoding="utf-8-sig").replace("currentColor","#171717")
 logo_uri = "data:image/svg+xml;base64," + b64encode(logo.encode()).decode("ascii")
 st.html(f'<style>.fc-head{{display:flex;align-items:center;gap:1rem;margin:.25rem 0 .8rem;color:#171717}} .fc-head img{{width:10.75rem;max-width:45vw;height:auto}} .fc-head span{{border-left:1px solid #ddd;padding-left:1rem;font-size:.85rem;font-weight:600}}</style><header class="fc-head" aria-label="FACE CODE Analytics"><img src="{logo_uri}" alt="FACE CODE"><span>Analytics · Wildberries</span></header>')
+st.html(f'<span hidden data-facecode-source="{source_status()}"></span>')
 require_access()
 
 import pandas as pd
 
 from analytics_calendar import START, dates
-from cloud_data import load_dataset
-from fc_format import DEMO_LABEL
 from model import ADS, FINANCE, FUNNEL, STOCK
 from runtime_model import PublishedAnalytics
 from protected_store import Denied, Invalid, Unavailable
@@ -46,12 +46,8 @@ try:
 except (Denied, Invalid, Unavailable, ValueError, KeyError, TypeError):
     st.error("Аналитика временно недоступна. Обратитесь к владельцу приложения.")
     st.stop()
-demo = payload.get("synthetic") is True
-st.session_state["_facecode_demo_payload"] = demo
 section = st.radio("Раздел", ("Неделя", "Неделя — детализация", "Продвижение"), horizontal=True)
 st.caption("Последнее принятое обновление · " + payload["released_at_utc"])
-if demo:
-    st.warning(DEMO_LABEL)
 if backup:
     st.warning("Показано последнее проверенное поколение.")
 latest = max((r["period_end"] for r in model.records if r["kind"] == "funnel"), default=START)

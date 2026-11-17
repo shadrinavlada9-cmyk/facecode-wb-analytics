@@ -6,7 +6,6 @@
 !/cloud_data.py
 !/protected_store.py
 !/login_limit.py
-!/analytics.json
 !/analytics_calendar.py
 !/face-code.svg
 !/fc_format.py
