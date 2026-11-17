@@ -4,6 +4,7 @@ from html import escape
 from numbers import Real
 import pandas as pd
 import streamlit as st
+from session_download import excel_download
 import wb_format as presentation
 from fc_format import DEMO_LABEL
 UNKNOWN = 'Не определено'
@@ -520,9 +521,7 @@ def render(result, scope, model=None, matches=None):
     def export():
         return _excel(_excel_tables(records, calendar, analysis), end_label, stock_meta)
 
-    st.download_button('Скачать Excel', export(), f'WB_Неделя_{start}_{end}_{channel}.xlsx',
-                       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                       on_click='ignore', type='primary', key='wb_detail_export')
+    excel_download('Скачать Excel', export(), f'WB_Неделя_{start}_{end}_{channel}.xlsx', primary=True)
 
 
 

@@ -6,6 +6,7 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+from session_download import excel_download
 
 from model import FUNNEL, FINANCE, STOCK, confirmed_sum
 from management import UNATTRIBUTED, gender
@@ -293,8 +294,8 @@ def render_week(model, adapted):
     if outside_export:
         sheets["Реклама вне разрезов"] = outside_export
     workbook = detail._excel(list(sheets.items()),f"FACE CODE · {a} — {b}",status)
-    download_slot.download_button("⬇ Скачать Excel принятой недели",workbook,f"FACE_CODE_WEEK_{a}_{b}.xlsx",
-                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key="wb_week_export")
+    with download_slot:
+        excel_download("⬇ Скачать Excel принятой недели", workbook, f"FACE_CODE_WEEK_{a}_{b}.xlsx")
 
 
 

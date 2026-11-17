@@ -2,6 +2,7 @@
 !/.streamlit/
 !/.gitignore
 !/.streamlit/config.toml
+!/access.py
 !/analytics.json
 !/analytics_calendar.py
 !/face-code.svg
@@ -15,6 +16,7 @@
 !/promotion_view.py
 !/requirements.txt
 !/runtime_model.py
+!/session_download.py
 !/streamlit_app.py
 !/wb_format.py
 !/wb_style.py

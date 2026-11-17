@@ -6,6 +6,7 @@ from html import escape
 
 import pandas as pd
 import streamlit as st
+from session_download import excel_download
 
 import management as M
 from fc_format import format_value
@@ -213,8 +214,7 @@ def render(model,records,current,previous,matches=None):
                     else:
                         st.caption("Нет совпадений по фильтру.")
                 payload=excel([(name,normalize_frame(rows))],{"Периоды":analysis,"Источник H7":stock_note})
-                st.download_button(f"Скачать Excel · {name}",payload,f"FACE_CODE_{name}_{a[0]}_{a[1]}.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key=f"attention_excel_{name}")
+                excel_download(f"Скачать Excel · {name}", payload, f"FACE_CODE_{name}_{a[0]}_{a[1]}.xlsx")
     return groups
 
 

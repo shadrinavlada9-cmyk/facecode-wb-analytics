@@ -20,3 +20,13 @@ gatherUsageStats = false
 
 [client]
 toolbarMode = "viewer"
+showErrorDetails = "none"
+
+[server]
+enableStaticServing = false
+enableXsrfProtection = true
+enableCORS = true
+
+[global]
+# Keep authenticated payloads out of the shared HTTP message cache.
+minCachedMessageSize = 2147483647.0

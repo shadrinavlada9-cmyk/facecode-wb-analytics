@@ -14,6 +14,7 @@ from itertools import combinations
 
 import pandas as pd
 import streamlit as st
+from session_download import excel_download
 import promotion_table as H
 from promotion_excel import excel
 from model import ADS, FUNNEL, FINANCE, confirmed_sum, ratio
@@ -81,8 +82,7 @@ def display(rows, key, sortable=True):
 
 
 def download(name,tables):
-    st.download_button("Скачать Excel · "+name,excel(tables),"FACE_CODE_"+name+".xlsx",
-                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key="promo_x_"+name)
+    excel_download("Скачать Excel · "+name, excel(tables), "FACE_CODE_"+name+".xlsx")
 
 
 def campaigns(model, period, matches, by_article=False):
