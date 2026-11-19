@@ -7,7 +7,8 @@ import re
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-POLICY = "5b28c591c4282a13686035404a200a441d0fccbfaadec4be98dbd39a832554d2"
+LEGACY_POLICY = "5b28c591c4282a13686035404a200a441d0fccbfaadec4be98dbd39a832554d2"
+POLICY = "52e2b6f843905cdb7b51032fb0ca799ac768b8e6a8d0b42e0b603a0438a2fc20"
 PUBLIC_REPO = "shadrinavlada9-cmyk/facecode-wb-analytics"
 MAX_BYTES = 25 * 1024 * 1024
 HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -83,16 +84,29 @@ def verify_generation(data, generation):
         raise Invalid
     manifest, payload = value["manifest"], value["analytics"]
     try:
-        if set(payload) != PAYLOAD_KEYS or set(manifest) != {
+        schema = manifest["schema"]
+        expected = PAYLOAD_KEYS | ({"sku_catalog", "source_accepted_at_utc"} if schema == 2 else set())
+        if set(payload) != expected or set(manifest) != {
             "schema", "policy", "payload_sha256", "updated_at", "coverage", "controls",
         }:
             raise Invalid
-        if manifest["schema"] != 1 or manifest["policy"] != POLICY or manifest["payload_sha256"] != checksum(canonical(payload)):
+        if schema not in (1,2) or manifest["policy"] != (POLICY if schema == 2 else LEGACY_POLICY) or manifest["payload_sha256"] != checksum(canonical(payload)):
             raise Invalid
         if manifest["updated_at"] != payload["released_at_utc"] or manifest["coverage"] != coverage_summary(payload):
             raise Invalid
         if datetime.fromisoformat(manifest["updated_at"]).utcoffset() is None:
             raise Invalid
+        if schema == 2:
+            if datetime.fromisoformat(payload["source_accepted_at_utc"]).utcoffset() is None:
+                raise Invalid
+            if payload["source_accepted_at_utc"] > payload["released_at_utc"]:
+                raise Invalid
+            catalog = payload["sku_catalog"]
+            if not isinstance(catalog, dict) or any(
+                not isinstance(a,str) or not isinstance(ids,list) or not ids
+                or len(ids) != len(set(ids)) or any(not isinstance(n,str) or not re.fullmatch(r"[1-9][0-9]{0,19}",n) for n in ids)
+                for a,ids in catalog.items()):
+                raise Invalid
         if not isinstance(manifest["controls"], dict):
             raise Invalid
         for key in ("values", "funnel_days", "coverage_by_scope", "accepted_weeks", "xway_detail",

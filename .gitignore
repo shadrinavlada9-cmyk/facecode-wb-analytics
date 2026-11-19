@@ -26,3 +26,8 @@
 !/week_attention.py
 !/week_controls.py
 !/week_detail.py
+!/sku_data.py
+!/sku_view.py
+!/sku_inline.py
+!/inline_tree.py
+!/sku_exports.py

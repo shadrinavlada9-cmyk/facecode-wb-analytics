@@ -1,10 +1,14 @@
+from session_download import excel_download
 from collections import defaultdict
 from decimal import Decimal
 from html import escape
 from numbers import Real
 import pandas as pd
 import streamlit as st
-from session_download import excel_download
+import sku_data
+import sku_view
+import sku_inline
+import inline_tree
 import wb_format as presentation
 UNKNOWN = 'Не определено'
 
@@ -177,13 +181,53 @@ def _tree_sort_key(row, path, sort_column):
         return COLLECTIONS.index(path[0]), name
     return path[-1] == UNKNOWN, name
 
-def _tree(rows, columns, headings=None, changes=None, sort_column=None, trend=False, daily_note="К предыдущему дню"):
-    """Expandable rows are native HTML details; opening them never reruns Streamlit."""
+INLINE_CSS = """
+    .wb-tree{position:relative;isolation:isolate;overflow:auto;max-height:56vh;scrollbar-gutter:stable;border:1px solid #ccd8e4;border-radius:6px;margin-bottom:1rem}
+    .wb-tree-row{color:#172b3e;display:grid;grid-template-columns:205px repeat(var(--wb-columns),120px);width:max-content;
+      border-bottom:1px solid #dce5ee;background:#fff;font-size:.82rem}
+    .wb-tree-row span{padding:7px 8px;text-align:right;min-width:0}
+    .wb-tree-row span:first-child{text-align:left;position:sticky;left:0;background:inherit;z-index:1}
+    .wb-tree details details summary span:first-child{padding-left:25px}
+    .wb-tree details details details>summary span:first-child{padding-left:43px}
+    .wb-tree details details div span:first-child{padding-left:43px}
+    .wb-tree details details details div span:first-child{padding-left:62px}
+    .wb-tree>details>.wb-tree-row[data-nm]>span:first-child{padding-left:26px}
+    .pending{padding:8px 20px;font-size:.8rem;color:#666}
+    .wb-tree summary{background:#f4f7fa;cursor:pointer}
+    .wb-tree > details > summary{background:#e7eff6;font-weight:600;border-top:1px solid #d2dfea}
+    .wb-tree details details > summary > span:first-child{font-weight:600}
+    .wb-tree details details > div:nth-child(odd){background:#fafbfd}
+    .wb-tree summary span:first-child:before{content:"▸ ";color:#4980a7}
+    .wb-tree details[open]>summary span:first-child:before{content:"▾ "}
+    .wb-tree-head,.wb-total{background:#d5e4f1;color:#162b41;font-weight:700}
+    .wb-tree .wb-tree-head{position:sticky;top:0;z-index:10;align-items:stretch;
+      background:#ebf2f8;box-shadow:0 1px 0 #ccd8e4}
+    .wb-tree .wb-tree-head span{display:flex;align-items:center;justify-content:flex-end;
+      min-height:2.8rem;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+    .wb-tree .wb-tree-head span:first-child{justify-content:flex-start;z-index:11}
+    .wb-tree-row .up{color:#187848;background-color:#e2f4e9}
+    .wb-tree-row .down{color:#ae2b31;background-color:#ffeded}
+    .wb-bar i{display:block;border-radius:2px;height:7px;margin-top:6px}
+    .wb-bar i.up{background:#27905a}.wb-bar i.down{background:#cc454a}
+"""
+
+def _tree(rows, columns, headings=None, changes=None, sort_column=None, trend=False, daily_note="К предыдущему дню", inline=None):
+    if inline and not inline["model"].wb_detail["catalog"]:
+        inline=None
+    """Native details keep their state; opening an unloaded type requests its rows."""
+    rows=dict(rows)
+    loaded=set()
+    if inline:
+        paths=[p for p in rows if len(p)==3 and p[0]!=UNALLOCATED[0]]
+        scope=inline_tree.scope_id(inline['model'],inline['period'],paths)
+        values,loaded=sku_inline.tree_children(paths=paths,scope=scope,book='detail',**inline)
+        for path,items in values.items():
+            for nm,values in items:
+                rows[(*path,nm or '—')]=values
     children = defaultdict(list)
     for path in rows:
         if path and path[0] in COLLECTIONS and path[0] != UNALLOCATED[0]:
             children[path[:-1]].append(path)
-    scope = len(columns) + trend
     head = '<div class="wb-tree-row wb-tree-head"><span>Коллекция / Гендер / Тип товара</span>'
     head += ''.join(f'<span>{escape((headings or {}).get(c, c))}</span>' for c in columns)
     head += ('<span>Тренд</span>' if trend else '') + '</div>'
@@ -207,43 +251,27 @@ def _tree(rows, columns, headings=None, changes=None, sort_column=None, trend=Fa
                 width = max(3, min(100, abs(float(value)) * 100)) if value else 0
                 bar = f'<i class="{_sign(amount)}" style="width:{width:.1f}%"></i>'
             values.append(f'<span class="wb-bar">{bar}</span>')
-        return f'<{tag} class="wb-tree-row"><span>{escape(label)}</span>{"".join(values)}</{tag}>'
+        attr=f' data-nm="{escape(path[-1])}"' if len(path)==4 else ''
+        return f'<{tag} class="wb-tree-row"{attr}><span>{escape(label)}</span>{"".join(values)}</{tag}>'
 
     def nested(parent):
         paths = sorted(children[parent], key=lambda p: _tree_sort_key(rows[p], p, sort_column))
         for path in paths:
-            if path in children:
-                yield '<details>' + line(path, 'summary') + ''.join(nested(path)) + '</details>'
+            if path in children or (inline and len(path)==3):
+                attr=inline_tree.attributes(path,len(path)!=3 or inline_tree.node_id(path) in loaded) if inline else ''
+                content=''.join(nested(path))
+                if inline and len(path)==3 and not content:
+                    content='<div class="pending">'+('Нет подтверждённых товаров.' if inline_tree.node_id(path) in loaded else 'Показатели загружаются при раскрытии.')+'</div>'
+                yield f'<details {attr}>' + line(path, 'summary') + content + '</details>'
             else:
                 yield line(path)
 
-    css = """
-    .wb-tree{position:relative;isolation:isolate;overflow:auto;max-height:56vh;scrollbar-gutter:stable;border:1px solid #ccd8e4;border-radius:6px;margin-bottom:1rem}
-    .wb-tree-row{color:#172b3e;display:grid;grid-template-columns:205px repeat(COLUMN_COUNT,120px);width:max-content;
-      border-bottom:1px solid #dce5ee;background:#fff;font-size:.82rem}
-    .wb-tree-row span{padding:7px 8px;text-align:right;min-width:0}
-    .wb-tree-row span:first-child{text-align:left;position:sticky;left:0;background:inherit;z-index:1}
-    .wb-tree details details summary span:first-child{padding-left:25px}
-    .wb-tree details details div span:first-child{padding-left:43px}
-    .wb-tree summary{background:#f4f7fa;cursor:pointer}
-    .wb-tree > details > summary{background:#e7eff6;font-weight:600;border-top:1px solid #d2dfea}
-    .wb-tree details details > summary > span:first-child{font-weight:600}
-    .wb-tree details details > div:nth-child(odd){background:#fafbfd}
-    .wb-tree summary span:first-child:before{content:"▸ ";color:#4980a7}
-    .wb-tree details[open]>summary span:first-child:before{content:"▾ "}
-    .wb-tree-head,.wb-total{background:#d5e4f1;color:#162b41;font-weight:700}
-    .wb-tree .wb-tree-head{position:sticky;top:0;z-index:10;align-items:stretch;
-      background:#ebf2f8;box-shadow:0 1px 0 #ccd8e4}
-    .wb-tree .wb-tree-head span{display:flex;align-items:center;justify-content:flex-end;
-      min-height:2.8rem;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
-    .wb-tree .wb-tree-head span:first-child{justify-content:flex-start;z-index:11}
-    .wb-tree-row .up{color:#187848;background-color:#e2f4e9}
-    .wb-tree-row .down{color:#ae2b31;background-color:#ffeded}
-    .wb-bar i{display:block;border-radius:2px;height:7px;margin-top:6px}
-    .wb-bar i.up{background:#27905a}.wb-bar i.down{background:#cc454a}
-    """.replace('COLUMN_COUNT', str(scope))
-    st.html(f'<style>{css}</style><div class="wb-tree">{head}{line(()).replace("wb-tree-row", "wb-tree-row wb-total", 1)}'
-            f'{"".join(nested(()))}</div>')
+    css = INLINE_CSS
+    html=f'<style>{css}</style><div class="wb-tree" style="--wb-columns:{len(columns)+trend}">{head}{line(()).replace("wb-tree-row", "wb-tree-row wb-total", 1)}'+f'{"".join(nested(()))}</div>'
+    if inline:
+        inline_tree.mount(html,inline['key'],scope,loaded)
+    else:
+        st.html(html)
 
 def _changes(rows, calendar=(), color_delta=True, previous_week=False):
     out = {}
@@ -347,7 +375,7 @@ def _excel_tables(records, calendar, analysis):
     return [('Недельные итоги', week), ('Заказы по дням', orders), ('Остатки по дням', stocks),
             ('На что обратить внимание', analysis), ('Детальные данные', flat)] + ([('Реклама вне разрезов',outside)] if outside else [])
 
-def _excel(tables, title, coverage):
+def _excel(tables, title, coverage, *, outlines=None):
     from io import BytesIO
     from openpyxl import Workbook as ExcelBook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -369,6 +397,9 @@ def _excel(tables, title, coverage):
             sheet.column_dimensions[cell.column_letter].width = 28 if cell.value in DIMENSIONS or cell.value == 'Группа' else 18
         sheet.row_dimensions[3].height = 38
         for index, row in enumerate(rows, 4):
+            if outlines and name in outlines:
+                sheet.sheet_properties.outlinePr.summaryBelow = False
+                sheet.row_dimensions[index].outlineLevel = min(7,outlines[name][index-4])
             for j, col in enumerate(columns, 1):
                 value = row.get(col)
                 if value is None:
@@ -377,6 +408,8 @@ def _excel(tables, title, coverage):
                 if isinstance(value, (Decimal, Real)):
                     cell.value = float(value)
                     cell.number_format = '0.00%' if col.endswith('%') else '0.00' if 'п.п.' in col or col.startswith('H7 ') else '#,##0'
+                    if name.startswith("Артикулы WB") and col.endswith("₽"):
+                        cell.number_format = '#,##0.00'
                     is_delta = col.startswith('Δ') or col.startswith(DELTA) or f'· {DELTA}' in col
                     # An increase in costs has no automatic positive business meaning.
                     if is_delta and 'продвижение' not in col.lower() and row.get('Показатель') != PROMO and value:
@@ -384,7 +417,9 @@ def _excel(tables, title, coverage):
                 else:
                     cell.value = value
                     cell.data_type = 's'
-        sheet.freeze_panes = 'D4' if len(columns) > 3 else 'A4'
+                    if col == 'Номер WB':
+                        cell.number_format = '@'
+        sheet.freeze_panes = 'E4' if columns[:4]==['Коллекция','Гендер','Тип товара','Номер WB'] else 'D4' if len(columns) > 3 else 'A4'
         sheet.auto_filter.ref = f'A3:{get_column_letter(len(columns))}{sheet.max_row}'
     out = BytesIO()
     book.save(out)
@@ -453,15 +488,20 @@ def render(result, scope, model=None, matches=None):
     summary = st.segmented_control('Колонки итогов', ['Заказы и реклама', 'Запас и доли'], default='Заказы и реклама',
                                    required=True, key='wb_detail_summary', label_visibility='collapsed')
     if summary == 'Запас и доли':
-        columns = [*SHARES.values(), *[c for c in actual if c.startswith(('Средний', 'Δ запас'))], COVERAGE]
+        columns = [sku_data.FBW, sku_data.FBS, *SHARES.values(), *[c for c in actual if c.startswith(('Средний', 'Δ запас'))], COVERAGE]
         columns = list(dict.fromkeys(columns))
         st.caption('Запас в ₽ по ССТ заказа. Денежная доля рассчитана по оценённой части запаса.')
     else:
         aliases = {REVENUE_RUB: 'Выручка, ₽ (справочно)', REVENUE_QTY: 'Выручка, шт. (справочно)'} if channel != 'ALL' else {}
         columns = [ORDERS_RUB, ORDERS_QTY, REVENUE_RUB, REVENUE_QTY, PROMO, XWAY,
+                   sku_data.FBW, sku_data.FBS,
                    'Прошлая неделя · заказы, ₽', 'Заказы · к прошлой неделе, %',
                    SHARES[ORDERS_RUB], SHARES[ORDERS_QTY], SHARES[PROMO]]
-    _tree(week, columns, headings=aliases if summary == 'Заказы и реклама' else None, sort_column=ORDERS_RUB)
+    base_inline=dict(model=model,period=(start,end),prior=(previous[0],previous[-1]) if previous else (start,end))
+    _tree(week, columns, headings=aliases if summary == 'Заказы и реклама' else None, sort_column=ORDERS_RUB,
+          inline=dict(base_inline,key='detail_summary_inline',kind='week',totals=week[()]))
+    st.caption(f"Остатки FBW/FBS · последний принятый снимок {sku_data.stock_date(model)}. "
+               + ("FBS не подтверждён." if model.get(sku_data.stock_date(model), sku_data.stock_date(model), "fbs_stock") is None else ""))
 
     if outside := records.get(UNALLOCATED[:1]):
         from fc_format import format_value
@@ -480,7 +520,8 @@ def render(result, scope, model=None, matches=None):
     _tree(rows, [*calendar, WEEK_NOW, WEEK_PREV, DELTA, RELATIVE], headings,
           _changes(rows, calendar, color_delta=order_metric != PROMO, previous_week=True),
           sort_column=WEEK_NOW,
-          trend=order_metric != PROMO, daily_note="К тому же дню прошлой недели")
+          trend=order_metric != PROMO, daily_note="К тому же дню прошлой недели",
+          inline=dict(base_inline,key='detail_orders_inline',kind='dynamic',metric=order_metric))
 
     st.subheader('Остатки — динамика по дням')
     comparable_stock_days = {scheme: days for scheme, days in stock_days.items() if len(days) >= 2}
@@ -506,7 +547,8 @@ def render(result, scope, model=None, matches=None):
             details += ' Оценка покрывает ' + _cell_text(COVERAGE, rows[()].get(COVERAGE)) + ' доступного запаса в штуках.'
         st.caption(details)
         columns = [*calendar, 'Среднее', DELTA, RELATIVE] + ([COVERAGE] if unit == '₽' else [])
-        _tree(rows, columns, headings, _changes(rows, calendar), sort_column='Среднее', trend=True)
+        _tree(rows, columns, headings, _changes(rows, calendar), sort_column='Среднее', trend=True,
+              inline=dict(base_inline,key='detail_stock_inline',kind='stock',scheme=scheme,unit=unit))
 
     else:
         st.caption("За выбранный период меньше двух сопоставимых снимков по одной схеме. Изменение остатка не рассчитано.")
@@ -517,8 +559,10 @@ def render(result, scope, model=None, matches=None):
                                     for k,v in row.items()}} for name,rows in groups.items() for row in rows]
     end_label = f'{start} — {end} · FACE CODE · Канал: {'Все схемы'}'
     stock_meta = coverage + ' · Рубли по ССТ по оценённому запасу. ' + note
+    from sku_exports import detail_export
+    export_paths = tuple(sku_data.paths(model,matches))
     def export():
-        return _excel(_excel_tables(records, calendar, analysis), end_label, stock_meta)
+        return detail_export(model,(start,end),base_inline['prior'],export_paths,records,calendar,analysis,end_label,stock_meta)
 
     excel_download('Скачать Excel', export(), f'WB_Неделя_{start}_{end}_{channel}.xlsx', primary=True)
 

@@ -1,3 +1,4 @@
+from session_download import excel_download
 """FACE CODE facts for the four accepted promotion sections."""
 from collections import defaultdict
 from decimal import Decimal
@@ -14,7 +15,7 @@ from itertools import combinations
 
 import pandas as pd
 import streamlit as st
-from session_download import excel_download
+import sku_view
 import promotion_table as H
 from promotion_excel import excel
 from model import ADS, FUNNEL, FINANCE, confirmed_sum, ratio
@@ -78,11 +79,14 @@ def display(rows, key, sortable=True):
             cells[k] = {"value":None if missing else v, "text":text, "tone":tone, "kind":"money2" if number or missing else "text"}
         s["rows"].append({"key":str(n),"cells":cells})
     st.html(H.table_html(s,max_height=410))
+    sku_view.promotion(table.to_dict("records"), key)
     return table
 
 
 def download(name,tables):
-    excel_download("Скачать Excel · "+name, excel(tables), "FACE_CODE_"+name+".xlsx")
+    book = {"Рекомендации": "promotion_recs", "Обзор": "promotion_overview", "Кампании": "promotion_campaigns"}[name]
+    prepared = list(tables) + [(label, sku_view.frame(rows)) for label,rows in sku_view.extra_sheets(book)]
+    excel_download("Скачать Excel · "+name, excel(prepared), "FACE_CODE_"+name+".xlsx")
 
 
 def campaigns(model, period, matches, by_article=False):
@@ -218,6 +222,8 @@ def render(model,period,prior,matches):
     if picked is None:
         return
     period,prior = picked
+    st.session_state["_wb_sku_promotion"] = (model, period, matches)
+    st.session_state["_wb_sku_campaign"] = None
     tabs=st.tabs(SECTIONS)
     _,current=selection_values(model,period,matches)
     _,baseline=selection_values(model,prior,matches) if prior[0]>=model_start() else ({},{})
@@ -262,6 +268,7 @@ def render(model,period,prior,matches):
         xway_rows, _ = M.xway(model,period,matches)
         all_ids = sorted({*signal_ids,*(str(r["Кампания"]) for r in ids)})
         chosen = st.selectbox("WB ID кампании из сигнала или таблицы",["Все кампании",*all_ids])
+        st.session_state["_wb_sku_campaign"] = chosen if chosen != "Все кампании" else None
         st.caption("История затрат WB. Списания показаны один раз на строку принятого расчёта.")
         wb_details = display([{"Дата":r["Дата"],"WB ID кампании":r["Кампания"],"Артикул продавца":r["Артикул"],"wb_spend":r["wb_spend"]}
                               for r in model.ad_rows if r.get("wb_spend") is not None and period[0]<=r["Дата"]<=period[1]

@@ -1,3 +1,4 @@
+from session_download import excel_download
 """Presentation-only weekly attention view over the admitted FACE CODE facts."""
 from collections import defaultdict
 from decimal import Decimal as D
@@ -6,7 +7,8 @@ from html import escape
 
 import pandas as pd
 import streamlit as st
-from session_download import excel_download
+import sku_view
+import sku_inline
 
 import management as M
 from fc_format import format_value
@@ -131,7 +133,7 @@ def model_rows(model, records, current, previous, matches, settings=(None,)*5):
     return groups,(a,b if previous else None,start,end,stamp),warning
 
 
-def render_cards(rows, section):
+def render_cards(rows, section, context=None, view_key=None):
     if not rows:
         st.caption("Нет подтверждённых случаев по выбранному условию.")
         return
@@ -163,7 +165,11 @@ def render_cards(rows, section):
                      +(f'<p>{note}</p>' if note else "")
                      +'<div class="fc-att-values">'+ "".join(pieces)+'</div>'
                      +f'<p><b>Проверить</b> · {escape(row["Что проверить"])}</p></article>')
-    st.html('<div class="fc-att-grid">'+ "".join(cards)+'</div>')
+    if context and context[0].wb_detail["catalog"]:
+        model,period,prior,matches=context
+        sku_inline.attention(model,period,prior,matches,rows,cards,fields,section,view_key,CSS)
+    else:
+        st.html('<div class="fc-att-grid">'+ "".join(cards)+'</div>')
 
 
 CSS = """<style>
@@ -197,11 +203,13 @@ def render(model,records,current,previous,matches=None):
     st.caption(analysis+" | "+stock_note+". Статусы кампаний относятся к выгрузке XWAY.")
     st.html(CSS)
     tabs=st.tabs(CATEGORIES)
+    export_groups={}
     for tab,(name,rows) in zip(tabs,groups.items()):
         with tab:
             if name==ADS and warning:
                 st.caption(warning)
-            render_cards(rows[:5],name)
+            context=(model,a,b or a,matches or (lambda p:True))
+            render_cards(rows[:5],name,context,'attention_top_'+name)
             if rows:
                 with st.expander(f"Подробности и фильтр · {len(rows)}"):
                     search=st.text_input("Группа, артикул или ID кампании",key=f"attention_filter_{name}").strip().lower()
@@ -210,12 +218,17 @@ def render(model,records,current,previous,matches=None):
                     if selected:
                         st.caption(f"Найдено: {len(selected)}")
                         offset=st.number_input("Страница",1,(len(selected)+9)//10,1,key=f"attention_page_{name}")
-                        render_cards(selected[(offset-1)*10:offset*10],name)
+                        render_cards(selected[(offset-1)*10:offset*10],name,context,'attention_full_'+name)
                     else:
                         st.caption("Нет совпадений по фильтру.")
-                payload=excel([(name,normalize_frame(rows))],{"Периоды":analysis,"Источник H7":stock_note})
-                excel_download(f"Скачать Excel · {name}", payload, f"FACE_CODE_{name}_{a[0]}_{a[1]}.xlsx")
-    return groups
+                from sku_exports import attention_export
+                import sku_data
+                export_groups[name]=selected
+                export_paths=tuple(sku_data.paths(model,matches or (lambda _:True)))
+                def payload(chosen=tuple(selected),category=name,paths=export_paths):
+                    return attention_export(model,a,b or a,paths,chosen,category,{"Периоды":analysis,"Источник H7":stock_note})
+                excel_download(f"Скачать Excel · {name}", payload(), f"FACE_CODE_{name}_{a[0]}_{a[1]}.xlsx")
+    return {name:export_groups.get(name,[]) for name in groups}
 
 
 

@@ -1,3 +1,4 @@
+from session_download import excel_download
 """Bind the selected FACE CODE facts to the accepted WB week renderers."""
 from collections import defaultdict
 from datetime import date, timedelta
@@ -6,13 +7,15 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
-from session_download import excel_download
 
 from model import FUNNEL, FINANCE, STOCK, confirmed_sum
 from management import UNATTRIBUTED, gender
 from analytics_calendar import dates, START
 import week_detail as detail
 import week_controls as controls
+import sku_data
+import sku_view
+import sku_inline
 from wb_format import day_label, DIMENSION_LABELS, WB_PERCENT, WB_TABLE1, delta_semantic_style, format_percent
 
 AD = ("wb_spend", "xway_spend", "ad_orders_rub", "ad_shows", "ad_clicks", "media_spend")
@@ -55,6 +58,8 @@ def read_scope(model, a, b, prior, matches, stock_through):
     previous = dates(*prior) if prior[0] >= START else []
     calendar = detail._dated(a)
     now = model.report(a,b,METRICS,matches,stock_through)
+    latest_stamp = sku_data.stock_date(model)
+    latest_stocks = model.report(latest_stamp,latest_stamp,STOCK,matches) if latest_stamp else {}
     old = model.report(*prior,METRICS,matches) if previous else {}
     daily = {day:model.report(day,day,METRICS,matches) for day in set(current+previous+list(calendar))}
     schemes = {"fbw":"fbw_stock", "fbs":"fbs_stock", "total":"stock_total"}
@@ -67,11 +72,21 @@ def read_scope(model, a, b, prior, matches, stock_through):
         return D(0) if report.get((),{}).get(metric) is not None else None
 
     records = {}
-    for path in visible_paths(now,(old,*daily.values())):
-        row = now[path]
+    # Latest-stock-only groups must remain visible on a historical week too.
+    # Keep the original period report returned to WEEK unchanged.
+    detail_now = dict(now)
+    for path in latest_stocks:
+        if path not in detail_now:
+            detail_now[path] = {metric:D(0) if value is not None else None for metric,value in now[()].items()}
+    for path in visible_paths(detail_now,(latest_stocks,old,*daily.values())):
+        row = detail_now[path]
         rec = {title: row.get(key) for title,key in ORDER_FIELDS.items()}
         rec.update({detail.REVENUE_RUB:row["revenue_rub"], detail.REVENUE_QTY:row["revenue_qty"],
                     detail.XWAY:row["xway_spend"], detail.SKU_COLUMN:row["sku_gt10"]})
+        rec[sku_data.FBW] = latest_stocks.get(path, {}).get("fbw_stock", D(0) if latest_stocks.get((), {}).get("fbw_stock") is not None else None)
+        rec[sku_data.FBS] = latest_stocks.get(path, {}).get("fbs_stock", D(0) if latest_stocks.get((), {}).get("fbs_stock") is not None else None)
+        rec["Дата остатков FBW/FBS"] = latest_stamp
+        rec["Статус FBS"] = "Подтверждён" if latest_stocks.get((), {}).get("fbs_stock") is not None else "FBS не подтверждён"
         dynamic = {}
         for title,key in ORDER_FIELDS.items():
             value, earlier = row[key], item(old,path,key)
@@ -186,7 +201,7 @@ def movement(frame, first, metric_for, enabled):
                 styler._display_funcs[i,j] = (lambda v:"—" if pd.isna(v) else f"{v*100:+.2f} п.п.") if col.startswith("Δ") else format_percent
     return styler
 
-def render_week(model, adapted):
+def render_week(model, adapted, matches=lambda path: True):
     result, scope, now, old, daily = adapted
     a,b,current,previous,_,_,_ = scope
     status = "WEEKLY принят" if model.accepted(a,b) else "OPEN · дневной слой"
@@ -254,7 +269,11 @@ def render_week(model, adapted):
                 for key,value in grouped.items()]
         outside = [r for r in rows if r[label] in outside_labels]
         shown = [r for r in rows if r not in outside]
-        controls._render_dimension_table(controls._dimension_display_frame(numeric(shown),label),label,key=f"t{number}",cap=650 if index==2 else 420)
+        if index==2 and model.wb_detail["catalog"]:
+            display=controls._dimension_display_frame(numeric(shown),label)
+            sku_inline.week6(model,(a,b),(previous[0],previous[-1]) if previous else (a,b),matches,shown,list(display.columns))
+        else:
+            controls._render_dimension_table(controls._dimension_display_frame(numeric(shown),label),label,key=f"t{number}",cap=420)
         if outside:
             value = outside[0].get(DIMENSION_LABELS["ad_spend"])
             st.caption(f"{UNATTRIBUTED} · {detail.integer(value)} ₽. Расход входит в итог.")
@@ -291,11 +310,18 @@ def render_week(model, adapted):
         if metric == "ad_spend":
             outside_export.extend({"Таблица":f"TABLE {number+1}","Распределение":UNATTRIBUTED,**{k:v for k,v in r.items() if k!=label}} for r in outside)
         sheets[f"TABLE {number+1}"] = [r for r in rows if r not in outside]
+        if index == 2:
+            sku_view.render(model, (a,b), matches, "week_table7", "week", daily=True, title="Артикулы WB · TABLE 7")
     if outside_export:
         sheets["Реклама вне разрезов"] = outside_export
-    workbook = detail._excel(list(sheets.items()),f"FACE CODE · {a} — {b}",status)
+    from sku_exports import week_export,capture_table7
+    export_paths = tuple(sku_data.paths(model,matches))
+    table7_sheets = capture_table7(st.session_state.get('_wb_sku_exports',{}).get('week_table7'))
+    def workbook():
+        return week_export(model,(a,b),(previous[0],previous[-1]) if previous else (a,b),export_paths,
+                           list(sheets.items()),f"FACE CODE · {a} — {b}",status,table7_sheets)
     with download_slot:
-        excel_download("⬇ Скачать Excel принятой недели", workbook, f"FACE_CODE_WEEK_{a}_{b}.xlsx")
+        excel_download("⬇ Скачать Excel принятой недели", workbook(), f"FACE_CODE_WEEK_{a}_{b}.xlsx")
 
 
 

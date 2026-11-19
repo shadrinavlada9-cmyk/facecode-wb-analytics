@@ -24,6 +24,7 @@ from runtime_model import PublishedAnalytics
 from protected_store import Denied, Invalid, Unavailable
 import week_adapter
 import week_detail
+import sku_view
 
 LABELS = dict(zip(FUNNEL + FINANCE + ADS + STOCK, (
     "Заказы, ₽", "Заказы, шт.", "Показы WB", "Переходы", "Корзины WB", "Отложено",
@@ -43,11 +44,14 @@ logout_button()
 try:
     payload, backup = load_dataset()
     model = PublishedAnalytics(payload)
+    sku_view.start_run()
 except (Denied, Invalid, Unavailable, ValueError, KeyError, TypeError):
     st.error("Аналитика временно недоступна. Обратитесь к владельцу приложения.")
     st.stop()
 section = st.radio("Раздел", ("Неделя", "Неделя — детализация", "Продвижение"), horizontal=True)
-st.caption("Последнее принятое обновление · " + payload["released_at_utc"])
+st.caption("Последнее принятое обновление · " + payload.get("source_accepted_at_utc",payload["released_at_utc"]))
+if not model.wb_detail["catalog"]:
+    st.info("Детализация WB ожидает доставки через 09. Показано прежнее проверенное поколение.")
 if backup:
     st.warning("Показано последнее проверенное поколение.")
 latest = max((r["period_end"] for r in model.records if r["kind"] == "funnel"), default=START)
@@ -88,7 +92,7 @@ if section == "Продвижение":
 else:
     adapted = week_adapter.read_scope(model,a,b,prior,matches,stock_through)
     if section == "Неделя":
-        week_adapter.render_week(model,adapted)
+        week_adapter.render_week(model,adapted,matches)
     else:
         week_detail.render(*adapted[:2],model=model,matches=matches)
 

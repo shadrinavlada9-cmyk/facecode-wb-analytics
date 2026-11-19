@@ -6,6 +6,12 @@ from model import Analytics, number
 
 class PublishedAnalytics(Analytics):
     def __init__(self, payload):
+        from hashlib import sha256
+        import json
+        canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf8")
+        checksum = lambda value: sha256(value).hexdigest()
+        self.wb_detail = {"catalog": {a: {"nm_ids": ids} for a,ids in payload.get("sku_catalog",{}).items()},
+                          "variants": [], "source_snapshots": {"generation": checksum(canonical(payload))}}
         self.mapping = payload["products"]
         self.source_qa = {}
         self.accepted_weeks = set(map(tuple, payload["accepted_weeks"]))
