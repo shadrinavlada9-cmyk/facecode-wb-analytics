@@ -69,11 +69,14 @@ def bundle(revision,period,prior,paths,_model):
         rec=records[('_WB',uid,'_')]
         rec['week']['XWAY, ₽']=card['Расход XWAY, ₽']
         metrics=A.metrics(report[('_WB',uid,'_')],total)
-        for metric in ('xway_spend','ad_shows','ad_clicks','ad_orders_rub','ad_orders_qty'):
-            metrics[metric]=card.get(S.LABELS[metric])
-        metrics.update(ad_drr=S.divide(card['Расход XWAY, ₽'],card['Рекламные заказы XWAY, ₽']),
-                       ad_ctr=S.divide(card['Клики XWAY'],card['Показы XWAY']),
-                       cpc=S.divide(card['Расход XWAY, ₽'],card['Клики XWAY']))
+        # TABLE 6 preserves the accepted screen's report and sparse overrides.
+        # The flat card sheet retains its separately confirmed XWAY facts.
+        from wb_format import DIMENSION_LABELS
+        visible = {DIMENSION_LABELS.get(metric, metric) for metric in metrics}
+        for metric, label in (('xway_spend', 'Расход XWAY, ₽'),
+                              ('ad_shows', 'РК показы'), ('ad_clicks', 'РК клики')):
+            if label in visible:
+                metrics[metric] = card.get(S.LABELS[metric])
         items.append({'nm':card[S.NM],'card':card,'record':rec,'week6':metrics})
     return items
 
