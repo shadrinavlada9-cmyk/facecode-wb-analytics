@@ -175,13 +175,14 @@ def numeric(records):
     return pd.DataFrame(records).map(lambda v: float(v) if isinstance(v,D) else v)
 
 
-def movement(frame, first, metric_for, enabled):
+def movement(frame, first, metric_for, enabled, previous_for=None):
     columns = list(frame)
     def shades(row):
         metric = metric_for(row)
         cells = [""] * len(columns)
         if enabled:
-            previous = None
+            previous = previous_for(row) if previous_for is not None else None
+            previous = float(previous) if previous is not None and pd.notna(previous) else None
             for i, column in enumerate(columns[1:], 1):
                 value = row[column]
                 if column.startswith("Δ"):
@@ -228,6 +229,12 @@ def render_week(model, adapted, matches=lambda path: True):
     st.markdown('<div class="kpi-grid">'+"".join(band)+'</div>',unsafe_allow_html=True)
     highlight = st.toggle("Подсветка динамики", value=True)
     cal = detail._dated(a)
+    # The first calendar day compares with the preceding day across week boundaries.
+    leading_day = (date.fromisoformat(cal[0]) - timedelta(days=1)).isoformat()
+    leading_report = model.report(leading_day, leading_day, METRICS, matches) if leading_day >= START else {}
+    leading_total = metrics(leading_report.get((), {}), leading_report.get((), {}))
+    last_previous_day = (date.fromisoformat(current[-1]) - timedelta(days=1)).isoformat()
+    last_previous_report = daily.get(last_previous_day, leading_report)
     labels = {**DIMENSION_LABELS, **{k:k for k in FACT_MAP if k not in DIMENSION_LABELS}}
     st.subheader("TABLE 1 — Общие показатели")
     total = metrics(now[()],now[()])
@@ -239,7 +246,7 @@ def render_week(model, adapted, matches=lambda path: True):
             continue
         values = {day_label(d):metrics(daily[d][()],daily[d][()]).get(m) if d in current else None for d in cal}
         change = diff(total.get(m),old_total.get(m))
-        day_change = diff(values[day_label(current[-1])],values.get(day_label(current[-2]))) if len(current)>1 else None
+        day_change = diff(values[day_label(current[-1])], metrics(last_previous_report.get((), {}), last_previous_report.get((), {})).get(m))
         one.append({"Показатель":title,**values,"Итого / последний":total.get(m),
                     "Δ к пред. дню, ₽ / шт.":day_change,"Прошлая неделя, ₽ / шт.":old_total.get(m),"Δ к прошлой неделе, ₽ / шт.":change,
                     "Δ к прошлой неделе, %":None if m in WB_PERCENT else share(change,old_total.get(m))})
@@ -249,7 +256,8 @@ def render_week(model, adapted, matches=lambda path: True):
         first = first.sort_values("Итого / последний",ascending=order=="Итог ↑").reset_index(drop=True)
         one = first.to_dict("records")
     inverse = {label:key for key,label in table1_labels.items()}
-    style = movement(first,"Показатель", lambda row:inverse[row["Показатель"]],highlight)
+    style = movement(first,"Показатель", lambda row:inverse[row["Показатель"]],highlight,
+                     previous_for=lambda row:leading_total.get(inverse[row["Показатель"]]))
     controls._render_html_table(first,"Показатель",styler=style,key="t1",max_height=620)
     sheets = {"TABLE 1":one}
     outside_export = []
@@ -258,6 +266,8 @@ def render_week(model, adapted, matches=lambda path: True):
         st.subheader(f"TABLE {number} — {title}")
         grouped = group(now,index)
         prior_groups = group(old,index)
+        leading_groups = group(leading_report,index)
+        last_previous_groups = group(last_previous_report,index)
         per_day = {d:group(daily[d],index) for d in cal}
         def evidence(key):
             return [g[key] for g in (grouped,prior_groups,*per_day.values()) if key in g]
@@ -295,18 +305,20 @@ def render_week(model, adapted, matches=lambda path: True):
             change = diff(current_value,baseline)
             rows.append({label:k,**{day_label(d):metrics(per_day[d].get(k,{}),daily[d][()]).get(metric)
                                             if d in current else None for d in cal},
-                         "Δ к пред. дню, ₽ / шт.":diff(metrics(per_day[current[-1]].get(k,{}),daily[current[-1]][()]).get(metric),metrics(per_day[current[-2]].get(k,{}),daily[current[-2]][()]).get(metric)) if len(current)>1 else None,
+                         "Δ к пред. дню, ₽ / шт.":diff(metrics(per_day[current[-1]].get(k,{}),daily[current[-1]][()]).get(metric),metrics(last_previous_groups.get(k,{}),last_previous_report.get((),{})).get(metric)),
                          "Итого / последний":current_value,"Прошлая неделя, ₽ / шт.":baseline,
                          "Δ к прошлой неделе, ₽ / шт.":change,"Δ к прошлой неделе, %":None if metric in WB_PERCENT else share(change,baseline)})
         if sort != "Как в отчёте":
             rows[:-1] = sorted(rows[:-1],key=lambda r:r["Итого / последний"] or 0,reverse=sort=="Итог ↓")
         outside = [r for r in rows if r[label] in outside_labels]
         frame = numeric([r for r in rows if r not in outside])
-        styler = movement(frame,label,lambda row:metric,highlight)
+        preceding = lambda row:metrics(leading_groups.get(row[label], {}), leading_report.get((), {})).get(metric)
+        styler = movement(frame,label,lambda row:metric,highlight,previous_for=preceding)
         controls._render_html_table(frame,label,styler=styler,key=f"t{number+1}",max_height=540)
         if outside and metric == "ad_spend":
             extra = numeric([{("Распределение" if k==label else k):v for k,v in r.items()} for r in outside])
-            controls._render_html_table(extra,"Распределение",styler=movement(extra,"Распределение",lambda row:metric,highlight),key="ads_by_gender")
+            controls._render_html_table(extra,"Распределение",styler=movement(extra,"Распределение",lambda row:metric,highlight,
+                previous_for=lambda row:metrics(leading_groups.get(row["Распределение"], {}), leading_report.get((), {})).get(metric)),key="ads_by_gender")
         if metric == "ad_spend":
             outside_export.extend({"Таблица":f"TABLE {number+1}","Распределение":UNATTRIBUTED,**{k:v for k,v in r.items() if k!=label}} for r in outside)
         sheets[f"TABLE {number+1}"] = [r for r in rows if r not in outside]
