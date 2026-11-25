@@ -42,7 +42,7 @@ def inventory(model):
     fbw = model.get(stamp,stamp,"fbw_stock") if stamp else None
     fbs = model.get(stamp,stamp,"fbs_stock") if stamp else None
     items = {}
-    for article in (fbw or {}).keys() | (fbs or {}).keys() | (orders or {}).keys():
+    for article in sorted((fbw or {}).keys() | (fbs or {}).keys() | (orders or {}).keys()):
         qty = orders.get(article,D(0)) if orders is not None else None
         warehouse = fbw.get(article,D(0)) if fbw is not None else None
         seller = fbs.get(article,D(0)) if fbs is not None else None

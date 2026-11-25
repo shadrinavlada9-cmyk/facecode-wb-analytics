@@ -36,6 +36,8 @@ class Analytics:
         scope = (a,b)
         daily = dates(a,b)
         if metric in STOCK:
+            if metric == "fbs_stock":
+                return None  # Numeric coverage is not an FBS confirmation.
             b = stock_through or b
             eligible = [s for s in self.cover if s[0] == s[1] and s[0] == b and metric in self.cover[s]]
             if not eligible or b < STOCK_START:
@@ -122,7 +124,8 @@ class Analytics:
             row["stock_value"] = sum(values[path], ZERO) if values[path] else None
             row["stock_value_share"] = ratio(row["stock_value"], total)
             row["stock_price_coverage"] = ratio(known[path], units[path])
-            row["sku_gt10"] = sku[path] if valid else None
+            row["sku_gt10"] = (sku[path] if valid and through not in
+                               getattr(self, "unverified_fbw_sku_dates", set()) else None)
 
 
 

@@ -1,6 +1,8 @@
 """Read production data only after the server-side access gate."""
 from hashlib import sha256
 from time import monotonic
+from pathlib import Path
+from release_contract import cache_namespace
 
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -9,7 +11,7 @@ from protected_store import (
     Denied, GitHubStore, Invalid, Unavailable, generation_path, latest, object_json, verify_pointer,
 )
 
-_CACHE = "_verified_generation"
+_CACHE = "_verified_generation:" + cache_namespace(Path(__file__).parent)
 DATA_REPOSITORY = "shadrinavlada9-cmyk/facecode-wb-data"
 FIRST_GENERATION = "9534e857253c7adfa61439e4a31b03f47217e1856ca6dbc7b5afde1712c45367"
 FIRST_GIT_BLOB = "545394a09b2bf7971f57aad7a5b4290df07a3cc8"

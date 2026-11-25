@@ -14,14 +14,19 @@ class PublishedAnalytics(Analytics):
                           "variants": [], "source_snapshots": {"generation": checksum(canonical(payload))}}
         self.mapping = payload["products"]
         self.source_qa = {}
+        # Old projection counted FBW+FBS before tagging its per-article SKU counts.
+        self.unverified_fbw_sku_dates = (
+            {a for a,b,metrics in payload["coverage_by_scope"] if "fbs_stock" in metrics}
+            | {a for a,b,metric,values in payload["values"] if metric == "fbs_stock"}
+            | {day for day,metric,counts in payload["sku_gt10_by_article"] if metric == "fbs_stock"})
         self.accepted_weeks = set(map(tuple, payload["accepted_weeks"]))
-        self.cover = defaultdict(set, {(a, b): set(metrics) for a, b, metrics in payload["coverage_by_scope"]})
+        self.cover = defaultdict(set, {(a, b): set(metrics) - {"fbs_stock"} for a, b, metrics in payload["coverage_by_scope"]})
         self.values = defaultdict(dict, {
             ((a, b), metric): {article: number(value) for article, value in values.items()}
-            for a, b, metric, values in payload["values"]
+            for a, b, metric, values in payload["values"] if metric != "fbs_stock"
         })
-        self.stock = {(day, metric) for day, metric, counts in payload["sku_gt10_by_article"]}
-        self.sku_counts = {(day, metric): counts for day, metric, counts in payload["sku_gt10_by_article"]}
+        self.stock = {(day, metric) for day, metric, counts in payload["sku_gt10_by_article"] if metric != "fbs_stock"}
+        self.sku_counts = {(day, metric): counts for day, metric, counts in payload["sku_gt10_by_article"] if metric != "fbs_stock"}
         self.records = [
             {"kind": "funnel", "period_start": day, "period_end": day, "facts": {"articles": True}}
             for day in payload["funnel_days"]

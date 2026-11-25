@@ -1,6 +1,7 @@
 """Read verified generations from a dedicated private GitHub repository."""
 from base64 import b64decode
 from datetime import datetime
+from release_contract import verify as verify_contract
 from hashlib import sha256
 import json
 import re
@@ -120,6 +121,10 @@ def verify_generation(data, generation):
             raise Invalid
     except (ValueError, TypeError, KeyError):
         raise Invalid from None
+    try:
+        verify_contract(manifest, payload)
+    except ValueError as error:
+        raise Invalid(str(error)) from None
     return payload
 
 

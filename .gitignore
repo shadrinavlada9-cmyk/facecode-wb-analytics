@@ -5,6 +5,7 @@
 !/access.py
 !/cloud_data.py
 !/protected_store.py
+!/release_contract.py
 !/login_limit.py
 !/analytics_calendar.py
 !/face-code.svg

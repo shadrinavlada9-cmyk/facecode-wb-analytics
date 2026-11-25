@@ -155,7 +155,7 @@ def variants(model, selected):
     arts.update(r[SELLER] for r in selected if not r[NM])
     rows = []
     for day, scheme, article, barcode, size, quantity in model.wb_detail["variants"]:
-        if day != stamp or article not in arts:
+        if day != stamp or article not in arts or scheme != "fbw_stock":
             continue
         ids = catalog.get(article, {}).get("nm_ids", [])
         attrs = model.attributes(article)
