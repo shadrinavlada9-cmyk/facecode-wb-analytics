@@ -1,3 +1,4 @@
+# TZ26 production entry point: accepted TABLE 1 and TABLE 6 release.
 from datetime import date, timedelta
 from base64 import b64encode
 from pathlib import Path
