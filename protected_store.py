@@ -8,7 +8,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 LEGACY_POLICY = "5b28c591c4282a13686035404a200a441d0fccbfaadec4be98dbd39a832554d2"
-POLICY = "52e2b6f843905cdb7b51032fb0ca799ac768b8e6a8d0b42e0b603a0438a2fc20"
+PREVIOUS_POLICY = "52e2b6f843905cdb7b51032fb0ca799ac768b8e6a8d0b42e0b603a0438a2fc20"
+POLICY = "8debae87c238b16e2e2f130c91f7be9ffd5acd1e7406bd901ffb7a6a885cb5d7"
 PUBLIC_REPO = "shadrinavlada9-cmyk/facecode-wb-analytics"
 MAX_BYTES = 25 * 1024 * 1024
 HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -90,7 +91,7 @@ def verify_generation(data, generation):
             "schema", "policy", "payload_sha256", "updated_at", "coverage", "controls",
         }:
             raise Invalid
-        if schema not in (1,2) or manifest["policy"] != (POLICY if schema == 2 else LEGACY_POLICY) or manifest["payload_sha256"] != checksum(canonical(payload)):
+        if schema not in (1,2) or manifest["policy"] not in ({POLICY, PREVIOUS_POLICY} if schema == 2 else {LEGACY_POLICY}) or manifest["payload_sha256"] != checksum(canonical(payload)):
             raise Invalid
         if manifest["updated_at"] != payload["released_at_utc"] or manifest["coverage"] != coverage_summary(payload):
             raise Invalid

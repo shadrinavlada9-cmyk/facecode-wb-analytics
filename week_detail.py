@@ -79,6 +79,7 @@ WEEK_PREV = 'Прошлая неделя'
 WEEK_NOW = 'За период'
 
 WEEK_PRIOR_DAY = 'Прошлая · '
+DAY_PRIOR = 'Предыдущий календарный день · '
 
 COVERAGE = 'Оценено запаса, %'
 
@@ -223,7 +224,12 @@ def _tree(rows, columns, headings=None, changes=None, sort_column=None, trend=Fa
         values,loaded=sku_inline.tree_children(paths=paths,scope=scope,book='detail',**inline)
         for path,items in values.items():
             for nm,values in items:
-                rows[(*path,nm or '—')]=values
+                child_path = (*path,nm or '—')
+                rows[child_path]=values
+                if changes is not None:
+                    calendar = [c for c in columns if isinstance(c,str) and len(c)==10 and c[4]=='-' and c[7]=='-']
+                    changes[child_path] = {day:delta for day,delta in _changes({child_path:values},calendar)[child_path].items()
+                                           if day in calendar}
     children = defaultdict(list)
     for path in rows:
         if path and path[0] in COLLECTIONS and path[0] != UNALLOCATED[0]:
@@ -278,12 +284,11 @@ def _changes(rows, calendar=(), color_delta=True, previous_week=False):
     for path, row in rows.items():
         sign = row.get(DELTA) if color_delta else None
         out[path] = {DELTA: sign, RELATIVE: sign}
-        if previous_week:
-            for day in calendar:
-                out[path][day] = _change(row.get(day), row.get(WEEK_PRIOR_DAY + day)) if color_delta else None
-        else:
-            for prev, day in zip(calendar, calendar[1:]):
-                out[path][day] = _change(row.get(day), row.get(prev))
+        from datetime import date, timedelta
+        for day in calendar:
+            prior = (date.fromisoformat(day)-timedelta(days=1)).isoformat()
+            baseline = row.get(DAY_PRIOR+day) if DAY_PRIOR+day in row else row.get(prior)
+            out[path][day] = _change(row.get(day), baseline)
     return out
 
 def _unpack(path):
@@ -296,7 +301,7 @@ def _unpack(path):
     return dict(zip(DIMENSIONS, labels if path else (BRAND, None, None)))
 
 def _flatten(columns, row, prefix=''):
-    return {prefix + name: row.get(name) for name in columns}
+    return {prefix + name: row.get(name) for name in columns if not str(name).startswith(DAY_PRIOR)}
 
 def _discussion(rows):
     st.subheader('На что обратить внимание')
@@ -353,7 +358,7 @@ def _excel_tables(records, calendar, analysis):
         if path and path[0] == UNALLOCATED[0]:
             if len(path)==1:
                 outside.append({"Распределение":"Реклама без привязки к товарам",**record["week"]})
-                outside.append({"Распределение":"Реклама без привязки к товарам","Показатель":PROMO,**record["dynamic"][PROMO]})
+                outside.append({"Распределение":"Реклама без привязки к товарам","Показатель":PROMO,**_flatten(record["dynamic"][PROMO],record["dynamic"][PROMO])})
             continue
         dims = _unpack(path)
         level = {'0': 'Итого', '1': 'Коллекция', '2': 'Гендер', '3': 'Тип товара'}[str(len(path))]
@@ -361,7 +366,7 @@ def _excel_tables(records, calendar, analysis):
         weekly = {**dim, **record['week']}
         week.append(weekly)
         for metric, series in record['dynamic'].items():
-            orders.append({**dim, 'Показатель': metric, **series})
+            orders.append({**dim, 'Показатель': metric, **_flatten(series,series)})
         stock_row = dict(dim)
         for (scheme, unit), series in record['stocks'].items():
             stock_row.update(_flatten(series, series, f'{SCHEMES[scheme]} {unit} · '))
@@ -380,6 +385,8 @@ def _excel(tables, title, coverage, *, outlines=None):
     from openpyxl import Workbook as ExcelBook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils.cell import get_column_letter
+    from wb_format import WB_TABLE1, WB_PERCENT
+    table1_percent_rows = {label for key,label in WB_TABLE1 if key in WB_PERCENT}
     book = ExcelBook()
     book.remove(book.active)
     for name, rows in tables:
@@ -408,6 +415,10 @@ def _excel(tables, title, coverage, *, outlines=None):
                 if isinstance(value, (Decimal, Real)):
                     cell.value = float(value)
                     cell.number_format = '0.00%' if col.endswith('%') else '0.00' if 'п.п.' in col or col.startswith('H7 ') else '#,##0'
+                    if name == 'TABLE 1' and row.get('Показатель') in table1_percent_rows:
+                        cell.number_format = '0.00%'
+                    if name == 'TABLE 1' and row.get('Показатель') in ('Оборачиваемость в заказах, дней','Оборачиваемость в продажах, дней') and not col.endswith('%'):
+                        cell.number_format = '0.00'
                     if name.startswith("Артикулы WB") and col.endswith("₽"):
                         cell.number_format = '#,##0.00'
                     is_delta = col.startswith('Δ') or col.startswith(DELTA) or f'· {DELTA}' in col
@@ -516,11 +527,11 @@ def render(result, scope, model=None, matches=None):
                                         key='wb_detail_orders', label_visibility='collapsed')
     rows = {path: rec['dynamic'][order_metric] for path, rec in records.items()}
     st.caption('Закрытая неделя: итог из принятой WEEKLY-выгрузки, дни из DAILY. '
-               'Открытая неделя: сравнение по одинаковым дням. Цвет дня показывает разницу с тем же днём прошлой недели. Расходы WB без однозначной связи показаны отдельно.')
+               'Открытая неделя: сравнение по одинаковым дням. Цвет дня показывает рост или снижение к предыдущему календарному дню. Расходы WB без однозначной связи показаны отдельно.')
     _tree(rows, [*calendar, WEEK_NOW, WEEK_PREV, DELTA, RELATIVE], headings,
-          _changes(rows, calendar, color_delta=order_metric != PROMO, previous_week=True),
+          _changes(rows, calendar, color_delta=order_metric != PROMO),
           sort_column=WEEK_NOW,
-          trend=order_metric != PROMO, daily_note="К тому же дню прошлой недели",
+          trend=order_metric != PROMO, daily_note="К предыдущему календарному дню",
           inline=dict(base_inline,key='detail_orders_inline',kind='dynamic',metric=order_metric))
 
     st.subheader('Остатки — динамика по дням')

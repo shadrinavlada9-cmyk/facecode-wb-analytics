@@ -146,6 +146,17 @@ def semantic_direction(metric: str) -> str:
     return "neutral"
 
 
+def daily_direction_style(value: Any, previous: Any) -> str:
+    """Calendar-day direction, independent of metric effectiveness and rounding."""
+    current, earlier = _decimal(value), _decimal(previous)
+    if current is None or earlier is None or current == earlier:
+        return ""
+    increased = current > earlier
+    color = VISUAL_COLORS["positive" if increased else "negative"]
+    text = "#20633A" if increased else "#9A3030"
+    return f"background-color:{color};color:{text};font-weight:600"
+
+
 def delta_semantic_style(metric: str, value: Any) -> str:
     d = _decimal(value)
     if d is None:

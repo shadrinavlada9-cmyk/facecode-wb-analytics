@@ -8,7 +8,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-from model import FUNNEL, FINANCE, STOCK, confirmed_sum
+from model import FUNNEL, FINANCE, STOCK, MEDIA, confirmed_sum
 from management import UNATTRIBUTED, gender
 from analytics_calendar import dates, START
 import week_detail as detail
@@ -16,9 +16,10 @@ import week_controls as controls
 import sku_data
 import sku_view
 import sku_inline
-from wb_format import day_label, DIMENSION_LABELS, WB_PERCENT, WB_TABLE1, delta_semantic_style, format_percent
+from wb_format import day_label, DIMENSION_LABELS, WB_PERCENT, WB_TABLE1, delta_semantic_style, daily_direction_style, format_percent
 
 AD = ("wb_spend", "xway_spend", "ad_orders_rub", "ad_shows", "ad_clicks", "media_spend")
+TABLE1_EXTRA = (*MEDIA, "ad_orders_qty")
 METRICS = FUNNEL + FINANCE + AD + STOCK
 ORDER_FIELDS = dict(zip((detail.ORDERS_RUB, detail.ORDERS_QTY, detail.PROMO),
                         (*FUNNEL[:2], "wb_spend")))
@@ -62,6 +63,9 @@ def read_scope(model, a, b, prior, matches, stock_through):
     latest_stocks = model.report(latest_stamp,latest_stamp,STOCK,matches) if latest_stamp else {}
     old = model.report(*prior,METRICS,matches) if previous else {}
     daily = {day:model.report(day,day,METRICS,matches) for day in set(current+previous+list(calendar))}
+    leading_day = (date.fromisoformat(calendar[0]) - timedelta(days=1)).isoformat()
+    if leading_day >= START:
+        daily[leading_day] = model.report(leading_day, leading_day, METRICS, matches)
     schemes = {"fbw":"fbw_stock", "fbs":"fbs_stock", "total":"stock_total"}
     stock_days = {k:[d for d in calendar if daily[d][()].get(metric) is not None] for k,metric in schemes.items()}
     stock_days = {key:days for key,days in stock_days.items() if days}
@@ -96,6 +100,9 @@ def read_scope(model, a, b, prior, matches, stock_through):
                            detail.RELATIVE:share(change,earlier)})
             series.update({detail.WEEK_PRIOR_DAY+d:item(daily[earlier_day],path,key)
                            for d,earlier_day in zip(current,previous)})
+            series.update({detail.DAY_PRIOR+d:item(daily[prior_day],path,key) if prior_day in daily else None
+                           for d in calendar
+                           for prior_day in [(date.fromisoformat(d)-timedelta(days=1)).isoformat()]})
             dynamic[title] = series
         rec["Прошлая неделя · заказы, ₽"] = dynamic[detail.ORDERS_RUB][detail.WEEK_PREV]
         rec["Заказы · к прошлой неделе, %"] = dynamic[detail.ORDERS_RUB][detail.RELATIVE]
@@ -112,6 +119,11 @@ def read_scope(model, a, b, prior, matches, stock_through):
                 stocks[scheme,unit] = {**stock_series,"Среднее":avg,detail.DELTA:delta,
                     detail.RELATIVE:share(delta,stock_series[current[0]]),
                     detail.COVERAGE:share(row["stock_price_coverage"],D(100)) if unit=="₽" else None}
+                price = share(row[FUNNEL[0]],row[FUNNEL[1]])
+                for d in calendar:
+                    prior_day = (date.fromisoformat(d)-timedelta(days=1)).isoformat()
+                    qty = item(daily[prior_day],path,schemes[scheme]) if prior_day in daily else None
+                    stocks[scheme,unit][detail.DAY_PRIOR+d] = qty if unit == "шт." or qty is None or not qty else (qty*price if price is not None else None)
                 rec[detail._stock_metrics(scheme,unit)] = avg
                 if unit == "шт.":
                     rec[detail._stock_change(scheme)+", шт."] = delta
@@ -158,6 +170,42 @@ def metrics(row, total):
     return result
 
 
+def table1_metrics(row, total, media):
+    """Restore brand-level media only in TABLE 1; no allocation to products."""
+    result = metrics({**row,"ad_orders_qty":media.get("ad_orders_qty")}, total)
+    result.update({key:media.get(key) for key in MEDIA})
+    result.update(media_ctr=share(result["media_clicks"],result["media_shows"]),
+                  media_cr=share(result["media_orders_qty"],result["media_shows"]),
+                  media_drr=share(result.get("media_spend"),result["media_orders_rub"]))
+    return result
+
+
+def turnover(model, stock_day, fbw, matches=lambda path: True, daily_cache=None):
+    """Use the displayed FBW and seven confirmed days ending before its snapshot.
+
+    Financial units retain the accepted definition: sales less returns, as exposed
+    by revenue_qty. Never substitute funnel buyouts, orders, or finance row counts.
+    """
+    cache = daily_cache if daily_cache is not None else {}
+    window = [(date.fromisoformat(stock_day)-timedelta(days=i)).isoformat() for i in range(7,0,-1)]
+    for day in window:
+        if day not in cache:
+            cache[day] = model.report(day,day,(FUNNEL[1],"revenue_qty"),matches)[()]
+    result = {"stock_date":stock_day,"window":window,"fbw":fbw}
+    for metric, source, noun in (("turn_orders",FUNNEL[1],"заказов"),("turn_sales","revenue_qty","продаж")):
+        values = [cache[day].get(source) for day in window]
+        covered = sum(value is not None for value in values)
+        units = sum(values,D(0)) if covered == 7 else None
+        status = ("Нет подтверждённого FBW" if fbw is None else
+                  f"Нет полного окна {covered}/7" if covered != 7 else
+                  f"Нет положительных {noun} за 7 дней" if units <= 0 else None)
+        result[metric] = fbw*7/units if status is None else None
+        result[metric+"_status"] = status
+        result[metric+"_qty"] = units
+        result[metric+"_coverage"] = covered
+    return result
+
+
 def group(report, index):
     rows = defaultdict(list)
     for path, row in report.items():
@@ -175,21 +223,21 @@ def numeric(records):
     return pd.DataFrame(records).map(lambda v: float(v) if isinstance(v,D) else v)
 
 
-def movement(frame, first, metric_for, enabled, previous_for=None):
+def movement(frame, first, metric_for, enabled, previous_for=None, exact_values=None):
     columns = list(frame)
     def shades(row):
         metric = metric_for(row)
         cells = [""] * len(columns)
         if enabled:
             previous = previous_for(row) if previous_for is not None else None
-            previous = float(previous) if previous is not None and pd.notna(previous) else None
             for i, column in enumerate(columns[1:], 1):
-                value = row[column]
-                if column.startswith("Δ"):
+                value = exact_values[row[first]].get(column) if exact_values is not None else row[column]
+                if column.startswith("Δ к пред. дню"):
+                    cells[i] = daily_direction_style(value, 0)
+                elif column.startswith("Δ"):
                     cells[i] = delta_semantic_style(metric, value) if pd.notna(value) and value else ""
                 elif column[:3] in ("Пн ","Вт ","Ср ","Чт ","Пт ","Сб ","Вс "):
-                    if pd.notna(value) and previous is not None and value != previous:
-                        cells[i] = delta_semantic_style(metric,value-previous)
+                    cells[i] = daily_direction_style(value, previous)
                     previous = value if pd.notna(value) else None
         return cells
     styler = controls._apply_week_contrast(frame.style.format(detail.integer,na_rep="—"),first).apply(shades,axis=1)
@@ -232,24 +280,46 @@ def render_week(model, adapted, matches=lambda path: True):
     # The first calendar day compares with the preceding day across week boundaries.
     leading_day = (date.fromisoformat(cal[0]) - timedelta(days=1)).isoformat()
     leading_report = model.report(leading_day, leading_day, METRICS, matches) if leading_day >= START else {}
-    leading_total = metrics(leading_report.get((), {}), leading_report.get((), {}))
+    media_days = {d:model.report(d,d,TABLE1_EXTRA,matches)[()] for d in {*cal,leading_day}}
+    leading_total = table1_metrics(leading_report.get((), {}), leading_report.get((), {}), media_days[leading_day])
     last_previous_day = (date.fromisoformat(current[-1]) - timedelta(days=1)).isoformat()
     last_previous_report = daily.get(last_previous_day, leading_report)
     labels = {**DIMENSION_LABELS, **{k:k for k in FACT_MAP if k not in DIMENSION_LABELS}}
     st.subheader("TABLE 1 — Общие показатели")
-    total = metrics(now[()],now[()])
-    old_total = metrics(old.get((),{}), old.get((),{}))
+    total = table1_metrics(now[()],now[()],model.report(a,b,TABLE1_EXTRA,matches)[()])
+    prior_period = tuple((date.fromisoformat(day)-timedelta(days=7)).isoformat() for day in (a,b))
+    old_total = table1_metrics(old.get((),{}), old.get((),{}),model.report(*prior_period,TABLE1_EXTRA,matches)[()])
+    turn_cache = {}
+    stock_day = sku_inline.stock_through(model,(a,b))
+    turn_days = {d:turnover(model,d,daily[d][()].get("fbw_stock"),matches,turn_cache) for d in cal}
+    turn_leading = turnover(model,leading_day,leading_report.get((),{}).get("fbw_stock"),matches,turn_cache)
+    turn_total = turnover(model,stock_day,now[()].get("fbw_stock"),matches,turn_cache)
+    turn_old = turnover(model,prior_period[1],old.get((),{}).get("fbw_stock"),matches,turn_cache)
+    day_metrics = {d:{**table1_metrics(daily[d][()],daily[d][()],media_days[d]),
+                      **{k:turn_days[d][k] for k in ("turn_orders","turn_sales")}} for d in cal}
+    for key in ("turn_orders","turn_sales"):
+        total[key],old_total[key],leading_total[key] = turn_total[key],turn_old[key],turn_leading[key]
+    day_previous = day_metrics.get(last_previous_day,leading_total)
+    st.caption(f"Оборачиваемость: доступный FBW соответствующей даты / средние за 7 предыдущих календарных дней. "
+               f"Итого / последний: FBW на {stock_day}, окно {turn_total['window'][0]} — {turn_total['window'][-1]}. "
+               "Продажи — принятые финансовые штуки за вычетом возвратов; неполное окно не рассчитывается.")
     one = []
     table1_labels = dict(WB_TABLE1) | {k:labels[k] for k in FACT_MAP if k not in dict(WB_TABLE1)}
+    # TABLE 1 keeps only available FBW and the two turnover metrics. Other
+    # inventory data remains available in the accepted store and other tables.
+    excluded_stock = {"unavailable","transit","stock_value_proxy","Остаток FBS, шт",
+                      "Остаток FBW РФ + FBS, шт",detail.SKU_COLUMN}
+    table1_labels = {k:v for k,v in table1_labels.items() if k not in excluded_stock}
     for m,title in table1_labels.items():
         if m in SHARES:
             continue
-        values = {day_label(d):metrics(daily[d][()],daily[d][()]).get(m) if d in current else None for d in cal}
+        values = {day_label(d):day_metrics[d].get(m) if d in current else None for d in cal}
         change = diff(total.get(m),old_total.get(m))
-        day_change = diff(values[day_label(current[-1])], metrics(last_previous_report.get((), {}), last_previous_report.get((), {})).get(m))
+        day_change = diff(values[day_label(current[-1])], day_previous.get(m))
         one.append({"Показатель":title,**values,"Итого / последний":total.get(m),
                     "Δ к пред. дню, ₽ / шт.":day_change,"Прошлая неделя, ₽ / шт.":old_total.get(m),"Δ к прошлой неделе, ₽ / шт.":change,
                     "Δ к прошлой неделе, %":None if m in WB_PERCENT else share(change,old_total.get(m))})
+    exact_first = {row["Показатель"]:row for row in one}
     first = numeric(one)
     order = st.selectbox("Сортировка",("Как в отчёте","Итог ↓","Итог ↑"),key="week_table1_order")
     if order != "Как в отчёте":
@@ -257,10 +327,27 @@ def render_week(model, adapted, matches=lambda path: True):
         one = first.to_dict("records")
     inverse = {label:key for key,label in table1_labels.items()}
     style = movement(first,"Показатель", lambda row:inverse[row["Показатель"]],highlight,
-                     previous_for=lambda row:leading_total.get(inverse[row["Показатель"]]))
+                     previous_for=lambda row:leading_total.get(inverse[row["Показатель"]]),exact_values=exact_first)
+    export_status = {}
+    for i, row in first.iterrows():
+        metric = inverse[row["Показатель"]]
+        if metric not in ("turn_orders","turn_sales"):
+            continue
+        statuses = {day_label(d):turn_days[d][metric+"_status"] for d in current}
+        statuses.update({"Итого / последний":turn_total[metric+"_status"],
+                         "Прошлая неделя, ₽ / шт.":turn_old[metric+"_status"]})
+        export_status[row["Показатель"]] = statuses
+        for j, column in enumerate(first.columns[1:],1):
+            if column.endswith(", %"):
+                continue
+            status_text = statuses.get(column)
+            style._display_funcs[i,j] = lambda v,s=status_text: (s or "—") if pd.isna(v) else f"{v:.2f}".replace(".",",")
     controls._render_html_table(first,"Показатель",styler=style,key="t1",max_height=620)
-    sheets = {"TABLE 1":one}
+    sheets = {"TABLE 1":[{k:(export_status.get(row["Показатель"],{}).get(k) or None) if pd.isna(v) else v
+                          for k,v in row.items()} for row in one]}
     outside_export = []
+    table6_sort = None
+    table6_ascending = False
     for index,(label,title) in enumerate(zip(detail.DIMENSIONS,("Коллекции","Гендеры","Типы товаров"))):
         number = 2+index*2
         st.subheader(f"TABLE {number} — {title}")
@@ -281,7 +368,12 @@ def render_week(model, adapted, matches=lambda path: True):
         shown = [r for r in rows if r not in outside]
         if index==2 and model.wb_detail["catalog"]:
             display=controls._dimension_display_frame(numeric(shown),label)
-            sku_inline.week6(model,(a,b),(previous[0],previous[-1]) if previous else (a,b),matches,shown,list(display.columns))
+            sort_column, direction = st.columns([3,1])
+            table6_sort = sort_column.selectbox("Сортировка",["Как в отчёте",*display.columns],key="week_table6_sort")
+            table6_ascending = direction.checkbox("По возр.",value=False,key="week_table6_asc")
+            table6_sort = None if table6_sort == "Как в отчёте" else table6_sort
+            shown = sku_inline.sort_rows(shown,table6_sort,table6_ascending)
+            sku_inline.week6(model,(a,b),(previous[0],previous[-1]) if previous else (a,b),matches,shown,list(display.columns),table6_sort,table6_ascending)
         else:
             controls._render_dimension_table(controls._dimension_display_frame(numeric(shown),label),label,key=f"t{number}",cap=420)
         if outside:
@@ -312,13 +404,15 @@ def render_week(model, adapted, matches=lambda path: True):
             rows[:-1] = sorted(rows[:-1],key=lambda r:r["Итого / последний"] or 0,reverse=sort=="Итог ↓")
         outside = [r for r in rows if r[label] in outside_labels]
         frame = numeric([r for r in rows if r not in outside])
+        exact_rows = {row[label]:row for row in rows}
         preceding = lambda row:metrics(leading_groups.get(row[label], {}), leading_report.get((), {})).get(metric)
-        styler = movement(frame,label,lambda row:metric,highlight,previous_for=preceding)
+        styler = movement(frame,label,lambda row:metric,highlight,previous_for=preceding,exact_values=exact_rows)
         controls._render_html_table(frame,label,styler=styler,key=f"t{number+1}",max_height=540)
         if outside and metric == "ad_spend":
             extra = numeric([{("Распределение" if k==label else k):v for k,v in r.items()} for r in outside])
             controls._render_html_table(extra,"Распределение",styler=movement(extra,"Распределение",lambda row:metric,highlight,
-                previous_for=lambda row:metrics(leading_groups.get(row["Распределение"], {}), leading_report.get((), {})).get(metric)),key="ads_by_gender")
+                previous_for=lambda row:metrics(leading_groups.get(row["Распределение"], {}), leading_report.get((), {})).get(metric),
+                exact_values={row["Распределение"]:row for row in extra.to_dict("records")}),key="ads_by_gender")
         if metric == "ad_spend":
             outside_export.extend({"Таблица":f"TABLE {number+1}","Распределение":UNATTRIBUTED,**{k:v for k,v in r.items() if k!=label}} for r in outside)
         sheets[f"TABLE {number+1}"] = [r for r in rows if r not in outside]
@@ -331,7 +425,7 @@ def render_week(model, adapted, matches=lambda path: True):
     table7_sheets = capture_table7(st.session_state.get('_wb_sku_exports',{}).get('week_table7'))
     def workbook():
         return week_export(model,(a,b),(previous[0],previous[-1]) if previous else (a,b),export_paths,
-                           list(sheets.items()),f"FACE CODE · {a} — {b}",status,table7_sheets)
+                           list(sheets.items()),f"FACE CODE · {a} — {b}",status,table7_sheets,table6_sort,table6_ascending)
     with download_slot:
         excel_download("⬇ Скачать Excel принятой недели", workbook(), f"FACE_CODE_WEEK_{a}_{b}.xlsx")
 

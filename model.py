@@ -10,6 +10,9 @@ FINANCE = ("revenue_rub", "revenue_qty")
 ADS = ("wb_spend", "media_spend", "xway_spend", "ad_orders_rub", "ad_orders_qty",
        "ad_shows", "ad_clicks", "ad_carts")
 STOCK = ("fbw_stock", "fbs_stock")
+MEDIA_SOURCES = {"media_shows": "views", "media_clicks": "clicks",
+                 "media_orders_rub": "orders_sum_pc", "media_orders_qty": "orders_qty_pc"}
+MEDIA = tuple(MEDIA_SOURCES)
 
 
 def number(value):
@@ -40,13 +43,13 @@ class Analytics:
             return dict(self.values[max(eligible), metric])
         if metric in FUNNEL + FINANCE and self.accepted(a,b):
             return dict(self.values[scope, metric])
-        if metric == "media_spend" and a >= AD_START and metric in self.cover[scope]:
+        if metric in ("media_spend", *MEDIA) and a >= AD_START and metric in self.cover[scope]:
             return dict(self.values[scope, metric])
-        if b < AD_START and metric in ADS[3:]:
+        if b < AD_START and metric in ADS[3:] + MEDIA:
             return None
         out = defaultdict(lambda: ZERO)
         for day in daily:
-            if day < AD_START and metric in ADS:
+            if day < AD_START and metric in ADS + MEDIA:
                 continue
             if metric not in self.cover[day,day]:
                 return None
@@ -55,7 +58,7 @@ class Analytics:
         return dict(out)
 
     def attributes(self, article, metric=None):
-        if not article and metric in ADS:
+        if not article and metric in ADS + MEDIA:
             return ("Не распределено",)*3
         return tuple(self.mapping.get(article, (UNKNOWN,)*3))
 

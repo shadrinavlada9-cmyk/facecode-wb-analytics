@@ -104,7 +104,22 @@ def tree_children(model,period,prior,paths,key,scope,book,kind,totals=None,metri
     return out,loaded
 
 
-def week6(model,period,prior,matches,rows,columns):
+def sort_rows(rows, column=None, ascending=False):
+    """Sort displayed numbers exactly; keep unknowns last and totals at the bottom."""
+    if column is None:
+        return list(rows)
+    present, missing, totals = [], [], []
+    for row in rows:
+        if row.get('Тип товара')=='ИТОГО':
+            totals.append(row)
+        elif row.get(column) is None:
+            missing.append(row)
+        else:
+            present.append(row)
+    return sorted(present,key=lambda row:row[column],reverse=not ascending)+missing+totals
+
+
+def week6(model,period,prior,matches,rows,columns,sort_column=None,ascending=False):
     import week_adapter as adapter
     from wb_format import DIMENSION_LABELS,format_metric,format_percent
     from week_controls import DIMENSION_METRICS,_DIMENSION_DRR
@@ -135,6 +150,7 @@ def week6(model,period,prior,matches,rows,columns):
             items=load(model,period,prior,selected)
             register(key+label,'week',model,items)
             memo={}
+            child_rows=[]
             for item in items:
                 scoped=filtered(model,item['articles'],memo)
                 original=scoped.report(*period,adapter.METRICS,lambda _:True,stock_through(model,period))[()]
@@ -142,7 +158,9 @@ def week6(model,period,prior,matches,rows,columns):
                 # The sparse card-level XWAY values take priority over inferred zero.
                 for metric,label2 in (('xway_spend','Расход XWAY, ₽'),('ad_shows','РК показы'),('ad_clicks','РК клики')):
                     if label2 in values: values[label2]=item['card'].get(sku_data.LABELS[metric])
-                children.append(line(item['nm'] or '—',values,nm=True))
+                child_rows.append({**values,columns[0]:item['nm'] or '—'})
+            for values in sort_rows(child_rows,sort_column,ascending):
+                children.append(line(values[columns[0]],values,nm=True))
         attr=UI.attributes(node,UI.node_id(node) in loaded)
         body.append(f'<details {attr}>'+line(label,row,'summary')+(''.join(children) or '<div class="pending">Показатели загружаются при раскрытии.</div>')+'</details>')
     from week_detail import INLINE_CSS

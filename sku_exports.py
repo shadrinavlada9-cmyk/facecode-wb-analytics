@@ -194,7 +194,7 @@ def detail_tables(model,period,prior,paths,records,calendar,analysis):
                 if name=='Недельные итоги':
                     child={**dims,**I.child_week(item,records[()]['week'])}
                 elif name=='Заказы по дням':
-                    metric=parent['Показатель'];child={**dims,'Показатель':metric,**item['record']['dynamic'][metric]}
+                    metric=parent['Показатель'];series=item['record']['dynamic'][metric];child={**dims,'Показатель':metric,**W._flatten(series,series)}
                 elif name=='Остатки по дням':
                     child=dict(dims)
                     for (scheme,unit),series in item['record']['stocks'].items():
@@ -209,8 +209,8 @@ def detail_tables(model,period,prior,paths,records,calendar,analysis):
     dynamic=[];stocks=[]
     for item in items:
         dims=dimensions(item)
-        for metric,series in item['record']['dynamic'].items():dynamic.append({**dims,'Показатель':metric,**series})
-        for (scheme,unit),series in item['record']['stocks'].items():stocks.append(missing_fbs({**dims,'Схема':W.SCHEMES[scheme],'Единица':unit,**series}))
+        for metric,series in item['record']['dynamic'].items():dynamic.append({**dims,'Показатель':metric,**{k:v for k,v in series.items() if not k.startswith(W.DAY_PRIOR)}})
+        for (scheme,unit),series in item['record']['stocks'].items():stocks.append(missing_fbs({**dims,'Схема':W.SCHEMES[scheme],'Единица':unit,**{k:v for k,v in series.items() if not k.startswith(W.DAY_PRIOR)}}))
     tables.extend(split('Динамика WB',dynamic));tables.extend(split('Запасы WB',stocks))
     tables.extend(variant_sheets(model,items))
     return tables,outlines
@@ -223,7 +223,7 @@ def detail_export(model,period,prior,paths,records,calendar,analysis,title,cover
     return _excel(tables,title,coverage,outlines=outlines)
 
 
-def week_export(model,period,prior,paths,base_tables,title,coverage,table7_sheets=()):
+def week_export(model,period,prior,paths,base_tables,title,coverage,table7_sheets=(),table6_sort=None,table6_ascending=False):
     import week_detail as W
     import week_adapter as A
     from wb_format import DIMENSION_LABELS
@@ -238,9 +238,15 @@ def week_export(model,period,prior,paths,base_tables,title,coverage,table7_sheet
         for parent in rows:
             result.append({'Тип товара':parent.get('Тип товара'),NM:None,**{k:v for k,v in parent.items() if k!='Тип товара'}});levels.append(0 if parent.get('Тип товара')=='ИТОГО' else 3)
             if parent.get('Тип товара')=='ИТОГО':continue
+            children=[]
             for item in by_type.get(parent['Тип товара'],[]):
                 values={DIMENSION_LABELS.get(k,k):v for k,v in item['week6'].items()}
-                result.append(missing_fbs({**{c:values.get(c) for c in parent},**dimensions(item)}));levels.append(4)
+                children.append(missing_fbs({**{c:values.get(c) for c in parent},**dimensions(item)}))
+            if table6_sort == 'Тип товара':
+                children=sorted(children,key=lambda row:str(row[NM]),reverse=not table6_ascending)
+            else:
+                children=I.sort_rows(children,table6_sort,table6_ascending)
+            result.extend(children);levels.extend([4]*len(children))
         tables.append((name,result));outlines[name]=levels
     tables.extend(split('Артикулы WB',[flat(item) for item in items]))
     report=model.report(*period,A.METRICS,lambda p:tuple(p) in paths,I.stock_through(model,period))
