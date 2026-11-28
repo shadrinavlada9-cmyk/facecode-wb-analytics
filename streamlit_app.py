@@ -3,6 +3,9 @@ from datetime import date, timedelta
 from base64 import b64encode
 from pathlib import Path
 
+from runtime_bootstrap import ensure_runtime
+ensure_runtime(Path(__file__).parent)
+
 import streamlit as st
 
 from access import logout_button, require_access

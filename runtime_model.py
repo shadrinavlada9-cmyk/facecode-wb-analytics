@@ -5,6 +5,17 @@ from model import Analytics, number
 
 
 class PublishedAnalytics(Analytics):
+    def for_period(self, a, b=None):
+        """The published runtime owns the period API used by the entry point."""
+        from period_classification import view
+        return view(self, a, b)
+
+    def report(self, a, b, metrics, matches=lambda path: True, stock_through=None):
+        scoped = self.for_period(a, b)
+        if scoped is not self:
+            return scoped.report(a, b, metrics, matches, stock_through)
+        return super().report(a, b, metrics, matches, stock_through)
+
     def __init__(self, payload):
         from hashlib import sha256
         import json

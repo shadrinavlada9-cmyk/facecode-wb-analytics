@@ -42,4 +42,6 @@ def verify(manifest,payload):
         raise ValueError('Некорректная контрольная сумма версии')
     return 'COMPATIBLE'
 def cache_namespace(directory):
-    return CONTRACT+':'+checksum((Path(directory)/'model.py').read_bytes())
+    directory=Path(directory)
+    names=('model.py','runtime_model.py','period_classification.py','protected_store.py','release_contract.py','runtime_bootstrap.py')
+    return CONTRACT+':'+checksum(canonical({n:checksum((directory/n).read_bytes()) for n in names if (directory/n).is_file()}))
