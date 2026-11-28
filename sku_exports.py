@@ -21,7 +21,8 @@ def generation(model):
 def bundle(revision,period,prior,paths,_model):
     """Run accepted report/read_scope once for all cards instead of per card."""
     import week_adapter as A
-    model=_model; memo={};source=copy(model)
+    model=_model.for_period(*period) if hasattr(_model,"for_period") else _model
+    memo={};source=copy(model)
     def original(a,b,metric,through=None):
         key=a,b,metric,through
         if key not in memo:memo[key]=model.get(a,b,metric,through)
@@ -39,6 +40,7 @@ def bundle(revision,period,prior,paths,_model):
         for article in card[S.SELLER].split(', '):article_uid[article]=uid
     batch=copy(model)
     batch.mapping={uid:('_WB',uid,'_') for uid in by_uid}
+    batch.classification_context=None  # UID aggregation has its own map; never replace it with product labels.
     grouped={}
     def get(a,b,metric,through=None):
         key=a,b,metric,through

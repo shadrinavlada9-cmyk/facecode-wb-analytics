@@ -90,6 +90,7 @@ def download(name,tables):
 
 
 def campaigns(model, period, matches, by_article=False):
+    model=model.for_period(*period) if hasattr(model,"for_period") else model
     grouped = defaultdict(lambda: defaultdict(lambda:Decimal(0)))
     for r in model.ad_rows:
         if not period[0]<=r["Дата"]<=period[1] or not matches(model.attributes(r["Артикул"],"wb_spend")):

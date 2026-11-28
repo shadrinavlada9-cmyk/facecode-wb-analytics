@@ -12,6 +12,10 @@ class PublishedAnalytics(Analytics):
         checksum = lambda value: sha256(value).hexdigest()
         self.wb_detail = {"catalog": {a: {"nm_ids": ids} for a,ids in payload.get("sku_catalog",{}).items()},
                           "variants": [], "source_snapshots": {"generation": checksum(canonical(payload))}}
+        self.classification_context = payload.get("_classification_context")
+        from period_classification import validate
+        validate(self.classification_context)
+        self._published_model = True
         self.mapping = payload["products"]
         self.source_qa = {}
         # Old projection counted FBW+FBS before tagging its per-article SKU counts.

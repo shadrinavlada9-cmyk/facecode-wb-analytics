@@ -36,6 +36,7 @@ RATIOS = {
 
 
 def values(model,period,matches):
+    model=model.for_period(*period) if hasattr(model,"for_period") else model
     a,b=period
     result=dict.fromkeys(BRAND+PRODUCT)
     for key,field in FACTS.items():

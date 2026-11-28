@@ -56,6 +56,7 @@ def inventory(model):
 
 
 def xway(model,period,matches):
+    model=model.for_period(*period) if hasattr(model,"for_period") else model
     a,b = period
     if b<AD_START:
         return {},None
@@ -111,6 +112,7 @@ def xway(model,period,matches):
 
 
 def signals(model,a,b,matches,settings):
+    model=model.for_period(*a) if hasattr(model,"for_period") else model
     reports,warning = xway(model,a,matches)
     previous,_ = xway(model,b,matches)
     start,end,stamp,stocks = inventory(model)

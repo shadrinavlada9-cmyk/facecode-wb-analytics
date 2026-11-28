@@ -62,6 +62,9 @@ while cursor.isoformat() <= latest:
     periods.append((cursor.isoformat(), min((cursor+timedelta(days=6)).isoformat(),latest)))
     cursor += timedelta(days=7)
 a,b = st.selectbox("Период", periods, index=len(periods)-1, format_func=lambda p: " — ".join(p))
+model = model.for_period(a,b)
+if model.source_qa.get("reference_modified_utc"):
+    st.caption("Справочник текущей недели · " + model.source_qa["reference_modified_utc"][:10])
 prior = (date.fromisoformat(a)-timedelta(days=7), date.fromisoformat(b)-timedelta(days=7))
 prior = tuple(d.isoformat() for d in prior)
 stock_through = max((d for d,_ in model.stock if b <= d <= (date.fromisoformat(a)+timedelta(days=6)).isoformat()), default=b)

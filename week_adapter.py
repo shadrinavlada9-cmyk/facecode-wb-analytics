@@ -55,6 +55,7 @@ def visible_paths(report, history):
             yield path
 
 def read_scope(model, a, b, prior, matches, stock_through):
+    model=model.for_period(a,b) if hasattr(model,"for_period") else model
     current = dates(a,b)
     previous = dates(*prior) if prior[0] >= START else []
     calendar = detail._dated(a)

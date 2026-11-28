@@ -10,7 +10,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 LEGACY_POLICY = "5b28c591c4282a13686035404a200a441d0fccbfaadec4be98dbd39a832554d2"
 PREVIOUS_POLICY = "52e2b6f843905cdb7b51032fb0ca799ac768b8e6a8d0b42e0b603a0438a2fc20"
-POLICY = "8debae87c238b16e2e2f130c91f7be9ffd5acd1e7406bd901ffb7a6a885cb5d7"
+POLICY = "f9414e231c6c1b902e3cb16279525229340b51edf40733f59d98ed2f66be7c75"
+ACCEPTED_PREVIOUS_POLICY = "8debae87c238b16e2e2f130c91f7be9ffd5acd1e7406bd901ffb7a6a885cb5d7"
 PUBLIC_REPO = "shadrinavlada9-cmyk/facecode-wb-analytics"
 MAX_BYTES = 25 * 1024 * 1024
 HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -92,7 +93,7 @@ def verify_generation(data, generation):
             "schema", "policy", "payload_sha256", "updated_at", "coverage", "controls",
         }:
             raise Invalid
-        if schema not in (1,2) or manifest["policy"] not in ({POLICY, PREVIOUS_POLICY} if schema == 2 else {LEGACY_POLICY}) or manifest["payload_sha256"] != checksum(canonical(payload)):
+        if schema not in (1,2) or manifest["policy"] not in ({POLICY, PREVIOUS_POLICY, ACCEPTED_PREVIOUS_POLICY} if schema == 2 else {LEGACY_POLICY}) or manifest["payload_sha256"] != checksum(canonical(payload)):
             raise Invalid
         if manifest["updated_at"] != payload["released_at_utc"] or manifest["coverage"] != coverage_summary(payload):
             raise Invalid
@@ -125,6 +126,14 @@ def verify_generation(data, generation):
         verify_contract(manifest, payload)
     except ValueError as error:
         raise Invalid(str(error)) from None
+    context=manifest.get("controls",{}).get("_classification_context")
+    if context is not None:
+        from period_classification import validate,reject_conflicted_payload
+        try:
+            validate(context)
+            reject_conflicted_payload(payload,context)
+        except (ValueError,TypeError,KeyError) as error:raise Invalid("Некорректная недельная классификация") from error
+        return {**payload,"_classification_context":context}
     return payload
 
 

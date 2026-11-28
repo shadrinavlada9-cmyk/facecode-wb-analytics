@@ -26,6 +26,7 @@ def title(path):
 
 
 def model_rows(model, records, current, previous, matches, settings=(None,)*5):
+    model=model.for_period(current[0],current[-1]) if hasattr(model,"for_period") else model
     groups = {label:[] for label in CATEGORIES}
     start,end,stamp,items = M.inventory(model)
     a = current[0],current[-1]

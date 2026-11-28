@@ -29,6 +29,9 @@ def confirmed_sum(values):
 
 
 class Analytics:
+    def for_period(self, a, b=None):
+        from period_classification import view
+        return view(self,a,b)
 
 
 
@@ -76,6 +79,8 @@ class Analytics:
         return {path: grouped[path] for path in paths}
 
     def report(self, a, b, metrics, matches=lambda path: True, stock_through=None):
+        scoped=self.for_period(a,b)
+        if scoped is not self:return scoped.report(a,b,metrics,matches,stock_through)
         inputs = {m: self.get(a,b,m,stock_through) for m in metrics}
         leaves = {self.attributes(art, m) for m, rows in inputs.items() for art in (rows or {})}
         leaves = {p for p in leaves if matches(p)}

@@ -50,6 +50,7 @@ def latest_stock(model):
 
 def cards(model, period, path, matches, campaign=None, allowed_articles=None):
     """One seller/card relation per row. Ambiguity is retained as unmatched."""
+    model=model.for_period(*period) if hasattr(model,"for_period") else model
     catalog = model.wb_detail["catalog"]
     metrics = {metric: model.get(*period, metric) for metric in CARD_METRICS}
     stamp = stock_date(model)
@@ -108,6 +109,9 @@ def cards(model, period, path, matches, campaign=None, allowed_articles=None):
             "Окно H7": f"{start7} — {end7}" if start7 else None,
             "Период": " — ".join(period),
         })
+        if "gender2" in mapping:
+            row["Гендер 2"] = ", ".join(mapping["gender2"]) or None
+            row["Коллекция справочника"] = ", ".join(mapping.get("collection_original",[])) or None
         result.append(row)
     grouped = defaultdict(list)
     for row in result:
